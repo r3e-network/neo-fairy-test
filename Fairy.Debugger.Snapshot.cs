@@ -23,10 +23,10 @@ namespace Neo.Plugins
             foreach (var s in _params)
             {
                 string session = s!.AsString();
-                if (sessionStringToFairySession[session].debugEngine != null)
+                if (TryGetFairySession(session, out FairySession? fairySession) && fairySession.debugEngine != null)
                 {
                     json[session] = true;
-                    sessionStringToFairySession[session].debugEngine = null;
+                    fairySession.debugEngine = null;
                 }
                 else
                     json[session] = false;

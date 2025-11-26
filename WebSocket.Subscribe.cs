@@ -157,6 +157,7 @@ namespace Neo.Plugins
             CloseSubscriptions(subscriptionsToClose);
         }
 
+        #pragma warning disable CS8600, CS8602, CS8604
         protected async void OnTransactionAdded(object? sender, Transaction tx)
         {
             HashSet<WebSocketSubscriptionNeoGoCompatible> subscriptionsToClose = new();
@@ -166,8 +167,11 @@ namespace Neo.Plugins
                 JObject _params = subscription.@params;
                 if (_params.ContainsProperty("sender"))
                 {
-                    string wantedSender = _params["sender"]!.AsString();
-                    UInt160.TryParse(wantedSender, out UInt160 wantedSenderUInt160);
+                    if (_params["sender"] is not JString senderToken)
+                        continue;
+                    string wantedSender = senderToken.AsString();
+                    if (!UInt160.TryParse(wantedSender, out UInt160 wantedSenderUInt160))
+                        continue;
                     if (!wantedSender.StartsWith("0x", StringComparison.InvariantCultureIgnoreCase))
                     {
                         // little-endian; reverse the UInt160
@@ -211,8 +215,11 @@ sendMessage:
                     {
                         if (_params.ContainsProperty("contract"))
                         {
-                            string wantedContract = _params["sender"]!.AsString();
-                            UInt160.TryParse(wantedContract, out UInt160 wantedContractUInt160);
+                            if (_params["contract"] is not JString contractToken)
+                                continue;
+                            string wantedContract = contractToken.AsString();
+                            if (!UInt160.TryParse(wantedContract, out UInt160 wantedContractUInt160))
+                                continue;
                             if (!wantedContract.StartsWith("0x", StringComparison.InvariantCultureIgnoreCase))
                             {
                                 // little-endian; reverse the UInt160
@@ -231,7 +238,8 @@ sendMessage:
                         notificationJson["container"] = app.Transaction?.Hash.ToString();
                         notificationJson["name"] = notification.EventName;
                         notificationJson["contract"] = notification.ScriptHash.ToString();
-                        notificationJson["contractname"] = NativeContract.ContractManagement.GetContract(latestSnapshot, notification.ScriptHash)?.Manifest.Name;
+                        var contract = NativeContract.ContractManagement.GetContract(snapshot, notification.ScriptHash);
+                        notificationJson["contractname"] = contract?.Manifest?.Name;
                         notificationJson["state"] = notification.State.ToJson();
                         JArray @params = new() { notificationJson };
                         returnedJson["params"] = @params;
@@ -258,8 +266,11 @@ sendMessage:
                 {
                     if (_params.ContainsProperty("container"))
                     {
-                        string wantedTxOrBlock = _params["container"]!.AsString();
-                        UInt256.TryParse(wantedTxOrBlock, out UInt256 wantedTxOrBlockUInt256);
+                        if (_params["container"] is not JString containerToken)
+                            continue;
+                        string wantedTxOrBlock = containerToken.AsString();
+                        if (!UInt256.TryParse(wantedTxOrBlock, out UInt256 wantedTxOrBlockUInt256))
+                            continue;
                         if (!wantedTxOrBlock.StartsWith("0x", StringComparison.InvariantCultureIgnoreCase))
                         {
                             // little-endian; reverse the UInt256
@@ -306,6 +317,7 @@ sendMessage:
             await Task.WhenAll(webSocketTasks);
             CloseSubscriptions(subscriptionsToClose);
         }
+        #pragma warning restore CS8600, CS8602, CS8604
 
         [WebsocketNeoGoCompatibleMethod]
         protected virtual object Subscribe(WebSocket webSocket, JArray _params)

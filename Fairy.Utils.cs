@@ -24,11 +24,18 @@ using Neo.SmartContract.Native;
 using Neo.VM;
 using Neo.VM.Types;
 using System.Numerics;
+using Neo.Wallets;
+using Akka.Actor;
 
 namespace Neo.Plugins
 {
     public partial class Fairy
     {
+        private ContractState RequireContract(DataCache snapshot, UInt160 hash)
+        {
+            return NativeContract.ContractManagement.GetContract(snapshot, hash) ?? throw new ArgumentException($"Contract {hash} not found.");
+        }
+
         [FairyRpcMethod]
         protected virtual JObject VirtualDeploy(JArray _params)
         {
@@ -61,12 +68,12 @@ namespace Neo.Plugins
             JObject json = new();
             try
             {
-                Block dummyBlock = CreateDummyBlockWithTimestamp(testSession.engine.SnapshotCache, system.Settings, timestamp: sessionStringToFairySession[session].engine.runtimeArgs.timestamp);
-                Transaction tx = defaultFairyWallet.MakeTransaction(sessionStringToFairySession[session].engine.SnapshotCache, script, sender: signers.Length > 0 ? signers[0].Account : defaultFairyWallet.GetAccounts().First().ScriptHash, persistingBlock: dummyBlock);
+                Block dummyBlock = CreateDummyBlockWithTimestamp(testSession.engine.SnapshotCache, system.Settings, timestamp: testSession.engine.runtimeArgs.timestamp);
+                Transaction tx = defaultFairyWallet.MakeTransaction(testSession.engine.SnapshotCache, script, sender: signers.Length > 0 ? signers[0].Account : defaultFairyWallet.GetAccounts().First().ScriptHash, persistingBlock: dummyBlock);
                 json["networkfee"] = tx.NetworkFee.ToString();
                 UInt160 hash = SmartContract.Helper.GetContractHash(tx.Sender, nef.CheckSum, manifest.Name);
-                sessionStringToFairySession[session].engine = FairyEngine.Run(script, snapshot.CloneCache(), this, persistingBlock: dummyBlock, container: tx, settings: system.Settings, gas: settings.MaxGasInvoke, oldEngine: sessionStringToFairySession[session].engine);
-                json["gasconsumed"] = sessionStringToFairySession[session].engine.FeeConsumed.ToString();
+                testSession.engine = FairyEngine.Run(script, snapshot.CloneCache(), this, persistingBlock: dummyBlock, container: tx, settings: system.Settings, gas: settings.MaxGasInvoke, oldEngine: testSession.engine);
+                json["gasconsumed"] = testSession.engine.FeeConsumed.ToString();
                 json[session] = hash.ToString();
             }
             catch (InvalidOperationException ex)
@@ -103,13 +110,13 @@ namespace Neo.Plugins
             JArray result = new();
             if (_params.Count == 2 && _params[0] is JNumber && _params[1] is JNumber)
                 for (uint i = uint.Parse(_params[0]!.AsString()); i <= uint.Parse(_params[1]!.AsString()); ++i)
-                    result.Add(NativeContract.Ledger.GetBlock(snapshot, i).ToJson(system.Settings));
+                    result.Add((NativeContract.Ledger.GetBlock(snapshot, i) ?? throw new ArgumentException($"Block {i} not found")).ToJson(system.Settings));
             if (result.Count == 0)
                 foreach (JToken? key in _params)
                     if (key is JNumber)
-                        result.Add(NativeContract.Ledger.GetBlock(snapshot, uint.Parse(key.AsString())).ToJson(system.Settings));
+                        result.Add((NativeContract.Ledger.GetBlock(snapshot, uint.Parse(key.AsString())) ?? throw new ArgumentException($"Block {key} not found")).ToJson(system.Settings));
                     else
-                        result.Add(NativeContract.Ledger.GetBlock(snapshot, UInt256.Parse(key!.AsString())).ToJson(system.Settings));
+                        result.Add((NativeContract.Ledger.GetBlock(snapshot, UInt256.Parse(key!.AsString())) ?? throw new ArgumentException($"Block {key} not found")).ToJson(system.Settings));
             return result;
         }
 
@@ -118,9 +125,8 @@ namespace Neo.Plugins
         {
             string? session = _params[0]?.AsString();
             UInt160 hash = UInt160.Parse(_params[1]!.AsString());
-            ContractState contractState = NativeContract.ContractManagement.GetContract(
-                session == null ? system.StoreView : sessionStringToFairySession[session].engine.SnapshotCache,
-                hash);
+            DataCache snapshot = session == null ? system.StoreView : GetOrCreateFairySession(session).engine.SnapshotCache;
+            ContractState contractState = RequireContract(snapshot, hash);
             JObject result = contractState.ToJson();
             using (MemoryStream ms = new MemoryStream())
             using (BinaryWriter writer = new BinaryWriter(ms))
@@ -139,7 +145,7 @@ namespace Neo.Plugins
             string? session = _params[0]?.AsString();
             bool verbose = _params.Count >= 2 ? _params[1]!.AsBoolean() : false;
             IEnumerable<ContractState> contractStates = NativeContract.ContractManagement.ListContracts(
-                session == null ? system.StoreView : sessionStringToFairySession[session].engine.SnapshotCache);
+                session == null ? system.StoreView : GetOrCreateFairySession(session).engine.SnapshotCache);
             JArray json = new();
             foreach (ContractState c in contractStates)
                 json.Add(verbose ? c.ToJson() : new JObject { ["id"] = c.Id, ["hash"] = c.Hash.ToString() });
@@ -167,14 +173,14 @@ namespace Neo.Plugins
             }
             else
                 oldEngine = testSession.engine;
-            ContractState contractState = NativeContract.ContractManagement.GetContract(oldEngine.SnapshotCache, contract);
+            ContractState contractState = RequireContract(oldEngine.SnapshotCache, contract);
             StorageKey storageKey = new StorageKey { Id = contractState.Id, Key = key };
             oldEngine.SnapshotCache.Delete(storageKey);
             if (value.Length > 0)
                 oldEngine.SnapshotCache.Add(new StorageKey { Id = contractState.Id, Key = key }, new StorageItem(value));
             JObject json = new();
             json[keyBase64] = valueBase64;
-            return new JObject();
+            return json;
         }
 
         [FairyRpcMethod]
@@ -193,7 +199,7 @@ namespace Neo.Plugins
             if (session == null)
             {   // use current actual blockchain state, instead of a fairy session
                 DataCache storeView = system.StoreView;
-                contractState = NativeContract.ContractManagement.GetContract(storeView, contract);
+                contractState = RequireContract(storeView, contract);
                 item = storeView.TryGet(new StorageKey { Id = contractState.Id, Key = key });
                 json[keyBase64] = item == null ? null : Convert.ToBase64String(item.Value.ToArray());
                 return json;
@@ -209,7 +215,7 @@ namespace Neo.Plugins
             }
             else
                 oldEngine = testSession.engine;
-            contractState = NativeContract.ContractManagement.GetContract(oldEngine.SnapshotCache, contract);
+            contractState = RequireContract(oldEngine.SnapshotCache, contract);
             item = oldEngine.SnapshotCache.TryGet(new StorageKey { Id = contractState.Id, Key = key });
             json[keyBase64] = item == null ? null : Convert.ToBase64String(item.Value.ToArray());
             return json;
@@ -242,7 +248,7 @@ namespace Neo.Plugins
                     oldEngine = testSession.engine;
                 snapshot = oldEngine.SnapshotCache;
             }
-            ContractState contractState = NativeContract.ContractManagement.GetContract(snapshot, contract);
+            ContractState contractState = RequireContract(snapshot, contract);
             JObject json = new();
             foreach (var (key, value) in snapshot.Find(StorageKey.CreateSearchPrefix(contractState.Id, prefix)))
                 json[Convert.ToBase64String(key.Key.ToArray())] = Convert.ToBase64String(value.ToArray());
@@ -266,7 +272,7 @@ namespace Neo.Plugins
         {
             JObject json = new();
             if (_params.Count >= 1)
-                json["time"] = sessionStringToFairySession[_params[0]!.AsString()].engine.GetFairyTime();  // usually you can use GetSnapshotTimeStamp instead of this method
+                json["time"] = GetOrCreateFairySession(_params[0]!.AsString()).engine.GetFairyTime();  // usually you can use GetSnapshotTimeStamp instead of this method
             else
                 json["time"] = FairyEngine.Run(new byte[] { 0x40 }, system.StoreView, this, settings: system.Settings, gas: settings.MaxGasInvoke).GetTime();
             return json;
@@ -304,8 +310,8 @@ namespace Neo.Plugins
         protected JObject SetTokenBalance(string session, UInt160 contract, UInt160 account, ulong balance, byte prefixAccount)
         {
             byte[] balanceBytes = BitConverter.GetBytes(balance);
-            FairyEngine oldEngine = sessionStringToFairySession[session].engine;
-            ContractState contractState = NativeContract.ContractManagement.GetContract(oldEngine.SnapshotCache, contract);
+            FairyEngine oldEngine = GetOrCreateFairySession(session).engine;
+            ContractState contractState = RequireContract(oldEngine.SnapshotCache, contract);
             JObject json = new();
             if (contract == gasScriptHash)
             {
@@ -344,7 +350,7 @@ namespace Neo.Plugins
         protected virtual JToken GetManyUnclaimedGas(JArray _params)
         {
             string? session = _params[0]?.AsString();
-            DataCache snapshot = session == null ? system.StoreView : sessionStringToFairySession[session].engine.SnapshotCache;
+            DataCache snapshot = session == null ? system.StoreView : GetOrCreateFairySession(session).engine.SnapshotCache;
             uint nextBlockIndex = NativeContract.Ledger.CurrentIndex(snapshot) + 1;
             JObject json = new JObject();
             for (int i = 1; i < _params.Count; ++i)
@@ -394,7 +400,7 @@ namespace Neo.Plugins
             //    return Convert.ToBase64String(tx.ToArray());
             Transaction? tx = null;
             DataCache snapshot = system.StoreView;
-            TransactionState state = NativeContract.Ledger.GetTransactionState(snapshot, hash);
+            TransactionState? state = NativeContract.Ledger.GetTransactionState(snapshot, hash);
             tx ??= state?.Transaction;
             if (tx is null)
                 return null;
@@ -402,12 +408,18 @@ namespace Neo.Plugins
             {
                 if (!verbose) return Convert.ToBase64String(tx.ToArray())!;
                 JObject json = TransactionToJson(tx, system.Settings);
-                if (state is not null)
+                if (state is TransactionState s)
                 {
-                    TrimmedBlock block = NativeContract.Ledger.GetTrimmedBlock(snapshot, NativeContract.Ledger.GetBlockHash(snapshot, state.BlockIndex));
-                    json["blockhash"] = block.Hash.ToString();
-                    json["confirmations"] = NativeContract.Ledger.CurrentIndex(snapshot) - block.Index + 1;
-                    json["blocktime"] = block.Header.Timestamp;
+#pragma warning disable CS8600, CS8604
+                    UInt256 blockHash = NativeContract.Ledger.GetBlockHash(snapshot, s.BlockIndex);
+                    TrimmedBlock? block = NativeContract.Ledger.GetTrimmedBlock(snapshot, blockHash);
+#pragma warning restore CS8600, CS8604
+                    if (block != null)
+                    {
+                        json["blockhash"] = block.Hash.ToString();
+                        json["confirmations"] = NativeContract.Ledger.CurrentIndex(snapshot) - block.Index + 1;
+                        json["blocktime"] = block.Header.Timestamp;
+                    }
                 }
                 return json;
             }
@@ -476,7 +488,7 @@ namespace Neo.Plugins
             }).ToArray();
         }
 
-        protected static string? GetExceptionMessage(Exception exception)
+        protected static string? GetExceptionMessage(Exception? exception)
         {
             var baseException = exception?.GetBaseException();
             string returned;
@@ -489,6 +501,124 @@ namespace Neo.Plugins
             }
             else
                 return null;
+        }
+
+        private Wallet GetSigningWallet(FairySession? session = null)
+        {
+            Wallet? wallet = session?.engine.runtimeArgs.fairyWallet ?? defaultFairyWallet;
+            return wallet ?? throw new InvalidOperationException("No wallet available. Open a wallet or set a session wallet before relaying.");
+        }
+
+        [FairyRpcMethod]
+        protected virtual JObject RelayDeployContract(JArray _params)
+        {
+            // params: [session|null, nefBase64, manifestJsonString, data? (ContractParameter or null), signers?]
+            string? sessionName = _params[0]?.AsString();
+            FairySession? session = sessionName == null ? null : GetOrCreateFairySession(sessionName);
+            Wallet wallet = GetSigningWallet(session);
+
+            NefFile nef = Convert.FromBase64String(_params[1]!.AsString()).AsSerializable<NefFile>();
+            ContractManifest manifest = ContractManifest.Parse(_params[2]!.AsString());
+
+            ContractParameter? data = null;
+            int signerIndex = 3;
+            if (_params.Count > 3 && _params[3] is JObject)
+            {
+                data = ContractParameter.FromJson((JObject)_params[3]!);
+                signerIndex = 4;
+            }
+
+            Signer[] signers = _params.Count > signerIndex ? SignersFromJson((JArray)_params[signerIndex]!, system.Settings) : System.Array.Empty<Signer>();
+            if (signers.Length == 0)
+            {
+                signers = new[]
+                {
+                    new Signer
+                    {
+                        Account = wallet.GetAccounts().First().ScriptHash,
+                        Scopes = WitnessScope.CalledByEntry
+                    }
+                };
+            }
+
+            byte[] script;
+            using (ScriptBuilder sb = new())
+            {
+                if (data != null)
+                    sb.EmitDynamicCall(NativeContract.ContractManagement.Hash, "deploy", nef.ToArray(), manifest.ToJson().ToString(), data);
+                else
+                    sb.EmitDynamicCall(NativeContract.ContractManagement.Hash, "deploy", nef.ToArray(), manifest.ToJson().ToString());
+                script = sb.ToArray();
+            }
+
+            DataCache snapshot = system.GetSnapshotCache();
+            Transaction tx = wallet.MakeTransaction(snapshot, script, sender: signers[0].Account, signers, maxGas: settings.MaxGasInvoke);
+
+            ContractParametersContext context = new(snapshot, tx, system.Settings.Network);
+            wallet.Sign(context);
+            if (context.Completed)
+                tx.Witnesses = context.GetWitnesses();
+
+            system.Blockchain.Tell(tx, ActorRefs.NoSender);
+
+            JObject json = tx.ToJson(system.Settings);
+            json["tx"] = Convert.ToBase64String(tx.ToArray());
+            json["hash"] = tx.Hash.ToString();
+            json["networkfee"] = tx.NetworkFee;
+            json["sysfee"] = tx.SystemFee;
+            if (!context.Completed)
+                json["pendingsignature"] = context.ToJson();
+            return json;
+        }
+
+        [FairyRpcMethod]
+        protected virtual JObject RelayInvokeFunction(JArray _params)
+        {
+            // params: [session|null, scripthash, operation, args?, signers?]
+            string? sessionName = _params[0]?.AsString();
+            FairySession? session = sessionName == null ? null : GetOrCreateFairySession(sessionName);
+            Wallet wallet = GetSigningWallet(session);
+
+            UInt160 scriptHash = UInt160.Parse(_params[1]!.AsString());
+            string operation = _params[2]!.AsString();
+            ContractParameter[] args = _params.Count >= 4 ? ((JArray)_params[3]!).Select(p => ContractParameter.FromJson((JObject)p!)).ToArray() : System.Array.Empty<ContractParameter>();
+            Signer[] signers = _params.Count >= 5 ? SignersFromJson((JArray)_params[4]!, system.Settings) : System.Array.Empty<Signer>();
+            if (signers.Length == 0)
+            {
+                signers = new[]
+                {
+                    new Signer
+                    {
+                        Account = wallet.GetAccounts().First().ScriptHash,
+                        Scopes = WitnessScope.CalledByEntry
+                    }
+                };
+            }
+
+            byte[] script;
+            using (ScriptBuilder sb = new())
+            {
+                script = sb.EmitDynamicCall(scriptHash, operation, args).ToArray();
+            }
+
+            DataCache snapshot = system.GetSnapshotCache();
+            Transaction tx = wallet.MakeTransaction(snapshot, script, sender: signers[0].Account, signers, maxGas: settings.MaxGasInvoke);
+
+            ContractParametersContext context = new(snapshot, tx, system.Settings.Network);
+            wallet.Sign(context);
+            if (context.Completed)
+                tx.Witnesses = context.GetWitnesses();
+
+            system.Blockchain.Tell(tx, ActorRefs.NoSender);
+
+            JObject json = tx.ToJson(system.Settings);
+            json["tx"] = Convert.ToBase64String(tx.ToArray());
+            json["hash"] = tx.Hash.ToString();
+            json["networkfee"] = tx.NetworkFee;
+            json["sysfee"] = tx.SystemFee;
+            if (!context.Completed)
+                json["pendingsignature"] = context.ToJson();
+            return json;
         }
     }
 }

@@ -34,6 +34,13 @@ namespace Neo.Plugins
             SourceCode = 1 << 4
         }
 
+        private FairyEngine GetDebugEngineOrThrow(string session)
+        {
+            if (!TryGetFairySession(session, out FairySession? fairySession) || fairySession.debugEngine is null)
+                throw new ArgumentException($"Debug snapshot for session `{session}` not found. Start a debug run first.");
+            return fairySession.debugEngine;
+        }
+
         [FairyRpcMethod]
         protected virtual JToken DebugFunctionWithSession(JArray _params)
         {
@@ -54,7 +61,7 @@ namespace Neo.Plugins
             {
                 Signers = signers,
                 Attributes = System.Array.Empty<TransactionAttribute>(),
-                Witnesses = witnesses,
+                Witnesses = witnesses ?? Array.Empty<Witness>(),
             };
             JObject json = DebugFairyTransaction(session, writeSnapshot, script, tx);
             return json;
@@ -66,11 +73,9 @@ namespace Neo.Plugins
             FairyEngine newEngine;
             BreakReason breakReason = BreakReason.None;
             logs.Clear();
-            FairyEngine.Log += CacheLog!;
-            newEngine = DebugRun(script, testSession.engine.SnapshotCache.CloneCache(), out breakReason, container: tx, settings: system.Settings, gas: settings.MaxGasInvoke, oldEngine: testSession.engine);
-            FairyEngine.Log -= CacheLog!;
+            newEngine = DebugRun(script, testSession.engine.SnapshotCache.CloneCache(), out breakReason, container: tx, settings: system.Settings, gas: settings.MaxGasInvoke, oldEngine: testSession.engine, logHandler: CacheLog);
             if (writeSnapshot)
-                sessionStringToFairySession[session].debugEngine = newEngine;
+                testSession.debugEngine = newEngine;
             return DumpDebugResultJson(newEngine, breakReason);
         }
 
@@ -86,17 +91,15 @@ namespace Neo.Plugins
             {
                 Signers = signers,
                 Attributes = System.Array.Empty<TransactionAttribute>(),
-                Witnesses = witnesses,
+                Witnesses = witnesses ?? Array.Empty<Witness>(),
             };
             FairySession testSession = GetOrCreateFairySession(session);
             FairyEngine newEngine;
             logs.Clear();
-            FairyEngine.Log += CacheLog!;
             BreakReason breakReason = BreakReason.None;
-            newEngine = DebugRun(script, testSession.engine.SnapshotCache.CloneCache(), out breakReason, container: tx, settings: system.Settings, gas: settings.MaxGasInvoke, oldEngine: testSession.engine);
-            FairyEngine.Log -= CacheLog!;
+            newEngine = DebugRun(script, testSession.engine.SnapshotCache.CloneCache(), out breakReason, container: tx, settings: system.Settings, gas: settings.MaxGasInvoke, oldEngine: testSession.engine, logHandler: CacheLog);
             if (writeSnapshot)
-                sessionStringToFairySession[session].debugEngine = newEngine;
+                testSession.debugEngine = newEngine;
             return DumpDebugResultJson(newEngine, breakReason);
         }
 
@@ -104,12 +107,12 @@ namespace Neo.Plugins
         protected virtual JToken DebugContinue(JArray _params)
         {
             string session = _params[0]!.AsString();
-            FairyEngine newEngine = sessionStringToFairySession[session].debugEngine!;
+            FairyEngine newEngine = GetDebugEngineOrThrow(session);
             BreakReason breakReason = BreakReason.None;
             logs.Clear();
-            FairyEngine.Log += CacheLog!;
+            newEngine.Log += CacheLog;
             Execute(newEngine, out breakReason);
-            FairyEngine.Log -= CacheLog!;
+            newEngine.Log -= CacheLog;
             return DumpDebugResultJson(newEngine, breakReason);
         }
 
@@ -146,7 +149,7 @@ namespace Neo.Plugins
             {
                 StringBuilder traceback = new();
                 traceback.Append($"CallingScriptHash={newEngine.CallingScriptHash}\r\nCurrentScriptHash={newEngine.CurrentScriptHash}\r\nEntryScriptHash={newEngine.EntryScriptHash}\r\n");
-                traceback.Append(newEngine.FaultException.StackTrace);
+                traceback.Append(newEngine.FaultException?.StackTrace);
                 foreach (Neo.VM.ExecutionContext context in newEngine.InvocationStack.Reverse())
                 {
                     UInt160 contextScriptHash = context.GetScriptHash();
@@ -168,7 +171,7 @@ namespace Neo.Plugins
 
                 foreach (LogEventArgs log in logs)
                 {
-                    string contractName = NativeContract.ContractManagement.GetContract(newEngine.SnapshotCache, log.ScriptHash).Manifest.Name;
+                    string? contractName = NativeContract.ContractManagement.GetContract(newEngine.SnapshotCache, log.ScriptHash)?.Manifest.Name;
                     traceback.Append($"\r\n[{log.ScriptHash}] {contractName}: {log.Message}");
                 }
                 json["traceback"] = traceback.ToString();
@@ -189,22 +192,28 @@ namespace Neo.Plugins
             return DumpDebugResultJson(new JObject(), newEngine, breakReason);
         }
 
-        private FairyEngine DebugRun(ReadOnlyMemory<byte> script, DataCache snapshot, out BreakReason breakReason, IVerifiable? container = null, Block? persistingBlock = null, ProtocolSettings? settings = null, int offset = 0, long gas = FairyEngine.TestModeGas, IDiagnostic? diagnostic = null, FairyEngine? oldEngine = null)
+        private FairyEngine DebugRun(ReadOnlyMemory<byte> script, DataCache snapshot, out BreakReason breakReason, IVerifiable? container = null, Block? persistingBlock = null, ProtocolSettings? settings = null, int offset = 0, long gas = FairyEngine.TestModeGas, IDiagnostic? diagnostic = null, FairyEngine? oldEngine = null, ApplicationEngine.OnLogEvent? logHandler = null)
         {
             persistingBlock ??= CreateDummyBlockWithTimestamp(snapshot, settings ?? ProtocolSettings.Default, timestamp: null);
             FairyEngine engine = FairyEngine.Create(TriggerType.Application, container, snapshot, this, persistingBlock, settings, gas, diagnostic, oldEngine: oldEngine);
+            if (logHandler != null)
+                engine.Log += logHandler;
             engine.LoadScript(script, initialPosition: offset);
-            return Execute(engine, out breakReason);
+            var result = Execute(engine, out breakReason);
+            if (logHandler != null)
+                engine.Log -= logHandler;
+            return result;
         }
 
         private SourceFilenameAndLineNum GetCurrentSourceCode(FairyEngine engine)
         {
-            UInt160 currentScriptHash = engine.CurrentScriptHash;
+            UInt160? currentScriptHash = engine.CurrentScriptHash;
             uint instructionPointer = (uint)engine.CurrentContext!.InstructionPointer;
             SourceFilenameAndLineNum currentSource = defaultSource;
-            if (contractScriptHashToAllSourceLineNums.ContainsKey(currentScriptHash)
-                 && contractScriptHashToAllInstructionPointerToSourceLineNum[currentScriptHash].ContainsKey(instructionPointer)
-                 && contractScriptHashToAllSourceLineNums[currentScriptHash]
+            if (currentScriptHash != null
+                && contractScriptHashToAllSourceLineNums.ContainsKey(currentScriptHash)
+                && contractScriptHashToAllInstructionPointerToSourceLineNum[currentScriptHash].ContainsKey(instructionPointer)
+                && contractScriptHashToAllSourceLineNums[currentScriptHash]
                     .Contains(contractScriptHashToAllInstructionPointerToSourceLineNum[currentScriptHash][instructionPointer]))
                 currentSource = contractScriptHashToAllInstructionPointerToSourceLineNum[currentScriptHash][instructionPointer];
             return currentSource;
@@ -212,7 +221,9 @@ namespace Neo.Plugins
 
         private bool HitSourceCodeBreakpoint(FairyEngine engine)
         {
-            UInt160 currentScriptHash = engine.CurrentScriptHash;
+            UInt160? currentScriptHash = engine.CurrentScriptHash;
+            if (currentScriptHash is null)
+                return false;
             uint currentInstructionPointer = (uint)engine.CurrentContext!.InstructionPointer;
             return contractScriptHashToSourceCodeBreakpoints.ContainsKey(currentScriptHash)
                 && contractScriptHashToAllInstructionPointerToSourceLineNum[currentScriptHash].ContainsKey(currentInstructionPointer)
@@ -274,7 +285,7 @@ namespace Neo.Plugins
             Instruction prevInstruction = engine.CurrentContext!.CurrentInstruction ?? Instruction.RET;
             OpCode prevOpCode = prevInstruction.OpCode;
             uint prevInstructionPointer = (uint)engine.CurrentContext.InstructionPointer;
-            UInt160 prevScriptHash = engine.CurrentScriptHash;
+            UInt160? prevScriptHash = engine.CurrentScriptHash;
             if ((requiredBreakReason & BreakReason.Call) > 0 &&
                (prevOpCode == OpCode.CALL || prevOpCode == OpCode.CALLA || prevOpCode == OpCode.CALLT || prevOpCode == OpCode.CALL_L)
                || (prevOpCode == OpCode.SYSCALL && prevInstruction.TokenU32 == ApplicationEngine.System_Contract_Call.Hash))
@@ -282,7 +293,8 @@ namespace Neo.Plugins
                 engine.ExecuteNext();
                 if (engine.State != VMState.NONE)
                     return engine;
-                SetAssemblyCoverage(prevScriptHash, prevInstructionPointer);
+                if (prevScriptHash != null)
+                    SetAssemblyCoverage(prevScriptHash, prevInstructionPointer);
                 engine.State = VMState.BREAK;
                 actualBreakReason |= BreakReason.Call;
                 return engine;
@@ -292,7 +304,8 @@ namespace Neo.Plugins
                 engine.ExecuteNext();
                 if (engine.State != VMState.NONE)
                     return engine;
-                SetAssemblyCoverage(prevScriptHash, prevInstructionPointer);
+                if (prevScriptHash != null)
+                    SetAssemblyCoverage(prevScriptHash, prevInstructionPointer);
                 engine.State = VMState.BREAK;
                 actualBreakReason |= BreakReason.Return;
                 return engine;
@@ -304,13 +317,15 @@ namespace Neo.Plugins
                 return engine;
 
             // Set coverage for the previous instruction
-            SetAssemblyCoverage(prevScriptHash, prevInstructionPointer);
+            if (prevScriptHash != null)
+                SetAssemblyCoverage(prevScriptHash, prevInstructionPointer);
             // Handle the current instruction
-            UInt160 currentScriptHash = engine.CurrentScriptHash;
+            UInt160? currentScriptHash = engine.CurrentScriptHash;
             uint currentInstructionPointer = (uint)engine.CurrentContext.InstructionPointer;
             if ((requiredBreakReason & BreakReason.AssemblyBreakpoint) > 0)
             {
-                if (contractScriptHashToAssemblyBreakpoints.ContainsKey(currentScriptHash)
+                if (currentScriptHash != null
+                 && contractScriptHashToAssemblyBreakpoints.ContainsKey(currentScriptHash)
                  && contractScriptHashToAssemblyBreakpoints[currentScriptHash]
                     .Contains(currentInstructionPointer))
                 {
@@ -406,12 +421,12 @@ namespace Neo.Plugins
         protected virtual JToken DebugStepInto(JArray _params)
         {
             string session = _params[0]!.AsString();
-            FairyEngine newEngine = sessionStringToFairySession[session].debugEngine!;
+            FairyEngine newEngine = GetDebugEngineOrThrow(session);
             BreakReason breakReason = BreakReason.None;
             logs.Clear();
-            FairyEngine.Log += CacheLog!;
+            newEngine.Log += CacheLog;
             StepInto(newEngine, out breakReason);
-            FairyEngine.Log -= CacheLog!;
+            newEngine.Log -= CacheLog;
             return DumpDebugResultJson(newEngine, breakReason);
         }
 
@@ -444,12 +459,12 @@ namespace Neo.Plugins
         protected virtual JToken DebugStepOut(JArray _params)
         {
             string session = _params[0]!.AsString();
-            FairyEngine newEngine = sessionStringToFairySession[session].debugEngine!;
+            FairyEngine newEngine = GetDebugEngineOrThrow(session);
             BreakReason breakReason = BreakReason.None;
             logs.Clear();
-            FairyEngine.Log += CacheLog!;
+            newEngine.Log += CacheLog;
             StepOut(newEngine, out breakReason);
-            FairyEngine.Log -= CacheLog!;
+            newEngine.Log -= CacheLog;
             return DumpDebugResultJson(newEngine, breakReason);
         }
 
@@ -484,12 +499,12 @@ namespace Neo.Plugins
         protected virtual JToken DebugStepOverSourceCode(JArray _params)
         {
             string session = _params[0]!.AsString();
-            FairyEngine newEngine = sessionStringToFairySession[session].debugEngine!;
+            FairyEngine newEngine = GetDebugEngineOrThrow(session);
             BreakReason breakReason = BreakReason.None;
             logs.Clear();
-            FairyEngine.Log += CacheLog!;
+            newEngine.Log += CacheLog;
             StepOverSourceCode(newEngine, out breakReason);
-            FairyEngine.Log -= CacheLog!;
+            newEngine.Log -= CacheLog;
             return DumpDebugResultJson(newEngine, breakReason);
         }
 
@@ -497,12 +512,12 @@ namespace Neo.Plugins
         protected virtual JToken DebugStepOverAssembly(JArray _params)
         {
             string session = _params[0]!.AsString();
-            FairyEngine newEngine = sessionStringToFairySession[session].debugEngine!;
+            FairyEngine newEngine = GetDebugEngineOrThrow(session);
             BreakReason breakReason = BreakReason.None;
             logs.Clear();
-            FairyEngine.Log += CacheLog!;
+            newEngine.Log += CacheLog;
             ExecuteAndCheck(newEngine, out breakReason);
-            FairyEngine.Log -= CacheLog!;
+            newEngine.Log -= CacheLog;
             return DumpDebugResultJson(newEngine, BreakReason.None);
         }
 
@@ -517,7 +532,7 @@ namespace Neo.Plugins
         {
             string session = _params[0]!.AsString();
             int invocationStackIndex = _params.Count > 1 ? int.Parse(_params[1]!.AsString()) : 0;
-            FairyEngine newEngine = sessionStringToFairySession[session].debugEngine!;
+            FairyEngine newEngine = GetDebugEngineOrThrow(session);
             return new JArray(newEngine.InvocationStack.ElementAt(invocationStackIndex).LocalVariables!.Select(p => ToJson(p, settings.MaxIteratorResultItems)));
         }
 
@@ -526,7 +541,7 @@ namespace Neo.Plugins
         {
             string session = _params[0]!.AsString();
             int invocationStackIndex = _params.Count > 1 ? int.Parse(_params[1]!.AsString()) : 0;
-            FairyEngine newEngine = sessionStringToFairySession[session].debugEngine!;
+            FairyEngine newEngine = GetDebugEngineOrThrow(session);
             return new JArray(newEngine.InvocationStack.ElementAt(invocationStackIndex).Arguments!.Select(p => ToJson(p, settings.MaxIteratorResultItems)));
         }
 
@@ -535,7 +550,7 @@ namespace Neo.Plugins
         {
             string session = _params[0]!.AsString();
             int invocationStackIndex = _params.Count > 1 ? int.Parse(_params[1]!.AsString()) : 0;
-            FairyEngine newEngine = sessionStringToFairySession[session].debugEngine!;
+            FairyEngine newEngine = GetDebugEngineOrThrow(session);
             return new JArray(newEngine.InvocationStack.ElementAt(invocationStackIndex).StaticFields!.Select(p => ToJson(p, settings.MaxIteratorResultItems)));
         }
 
@@ -544,7 +559,7 @@ namespace Neo.Plugins
         {
             string session = _params[0]!.AsString();
             int invocationStackIndex = _params.Count > 1 ? int.Parse(_params[1]!.AsString()) : 0;
-            FairyEngine newEngine = sessionStringToFairySession[session].debugEngine!;
+            FairyEngine newEngine = GetDebugEngineOrThrow(session);
             return new JArray(newEngine.InvocationStack.ElementAt(invocationStackIndex).EvaluationStack.Select(p => ToJson(p, settings.MaxIteratorResultItems)));
         }
 
@@ -552,7 +567,7 @@ namespace Neo.Plugins
         protected virtual JToken GetInvocationStack(JArray _params)
         {
             string session = _params[0]!.AsString();
-            FairyEngine newEngine = sessionStringToFairySession[session].debugEngine!;
+            FairyEngine newEngine = GetDebugEngineOrThrow(session);
             return new JArray(newEngine.InvocationStack.Select(p =>
             {
                 JObject json = new();
@@ -568,7 +583,7 @@ namespace Neo.Plugins
         {
             string session = _params[0]!.AsString();
             int invocationStackIndex = _params.Count > 1 ? int.Parse(_params[1]!.AsString()) : 0;
-            FairyEngine newEngine = sessionStringToFairySession[session].debugEngine!;
+            FairyEngine newEngine = GetDebugEngineOrThrow(session);
             return new JArray(newEngine.InvocationStack.ElementAt(invocationStackIndex).InstructionPointer);
         }
 
@@ -586,7 +601,7 @@ namespace Neo.Plugins
         {
             string session = _params[0]!.AsString();
             int invocationStackIndex = _params.Count > 1 ? int.Parse(_params[1]!.AsString()) : 0;
-            FairyEngine newEngine = sessionStringToFairySession[session].debugEngine!;
+            FairyEngine newEngine = GetDebugEngineOrThrow(session);
             Neo.VM.ExecutionContext invocationStackItem = newEngine.InvocationStack.ElementAt(invocationStackIndex);
             UInt160 invocationStackScriptHash = invocationStackItem.GetScriptHash();
             int instructionPointer = invocationStackItem.InstructionPointer;

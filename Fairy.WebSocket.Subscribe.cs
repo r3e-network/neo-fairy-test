@@ -171,7 +171,8 @@ namespace Neo.Plugins
                                     JObject notificationJson = new();
                                     notificationJson["tx"] = item.Value.ToString();
                                     notificationJson["scripthash"] = notification.ScriptHash.ToString();
-                                    notificationJson["contractname"] = NativeContract.ContractManagement.GetContract(latestSnapshot, notification.ScriptHash)?.Manifest.Name;
+                                    var contract = NativeContract.ContractManagement.GetContract(latestSnapshot ?? system.StoreView, notification.ScriptHash);
+                                    notificationJson["contractname"] = contract?.Manifest?.Name;
                                     notificationJson["eventname"] = notification.EventName;
                                     notificationJson["eventargs"] = notification.State.ToJson();
                                     json.Add(notificationJson);

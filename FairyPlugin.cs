@@ -26,11 +26,11 @@ namespace Neo.Plugins
 
         class Settings
         {
-            public IReadOnlyList<RpcServerSettings> Servers { get; }
+            public IReadOnlyList<RpcServersSettings> Servers { get; }
 
             public Settings(IConfigurationSection section)
             {
-                Servers = section.GetSection(nameof(Servers)).GetChildren().Select(p => RpcServerSettings.Load(p)).ToArray();
+                Servers = section.GetSection(nameof(Servers)).GetChildren().Select(RpcServersSettings.Load).ToArray();
             }
         }
 
@@ -53,10 +53,10 @@ namespace Neo.Plugins
             settings = new Settings(GetConfiguration());
         }
 
-        protected RpcServerSettings CreateDefaultFairyServerSettings(string ipAddress, uint? network = null)
+        protected RpcServersSettings CreateDefaultFairyServerSettings(string ipAddress, uint? network = null)
         {
             network ??= system!.Settings.Network!;
-            RpcServerSettings s = RpcServerSettings.Default with
+            RpcServersSettings s = RpcServersSettings.Default with
             {
                 Network = (uint)network,
                 BindAddress = System.Net.IPAddress.Parse(ipAddress),
@@ -77,7 +77,7 @@ namespace Neo.Plugins
             return s;
         }
 
-        protected Fairy? TryStartFairyServer(RpcServerSettings s)
+        protected Fairy? TryStartFairyServer(RpcServersSettings s)
         {
             if (s.Network != system!.Settings.Network)
             {
@@ -105,14 +105,14 @@ namespace Neo.Plugins
             this.system = system;
             bool hasServer = false;
             if (settings != null)
-                foreach (RpcServerSettings s in settings.Servers)
+                foreach (RpcServersSettings s in settings.Servers)
                     if (TryStartFairyServer(s) != null)
                         hasServer = true;
             if (hasServer == false)
             {
                 string serverCount = settings is null ? "null" : settings.Servers.Count.ToString();
                 ConsoleHelper.Warning($"Got {serverCount} servers from config, with no valid server. Using default!");
-                foreach (RpcServerSettings s in new RpcServerSettings[] { CreateDefaultFairyServerSettings("0.0.0.0"), CreateDefaultFairyServerSettings("::") })
+                foreach (RpcServersSettings s in new RpcServersSettings[] { CreateDefaultFairyServerSettings("0.0.0.0"), CreateDefaultFairyServerSettings("::") })
                     TryStartFairyServer(s);
             }
 

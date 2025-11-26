@@ -85,7 +85,7 @@ namespace Neo.Plugins
             return GetInvokeResultWithSession(session, writeSnapshot, script, signers, witnesses);
         }
 
-        private void CacheLog(object sender, LogEventArgs logEventArgs)
+        private void CacheLog(ApplicationEngine engine, LogEventArgs logEventArgs)
         {
             logs.Enqueue(logEventArgs);
         }
@@ -102,7 +102,7 @@ namespace Neo.Plugins
                 Signers = signers,
                 Attributes = Array.Empty<TransactionAttribute>(),
                 Script = script,
-                Witnesses = witnesses
+                Witnesses = witnesses ?? Array.Empty<Witness>()
             };
             JObject json = ExecuteFairyTransaction(session, writeSnapshot, script, tx);
             return json;
@@ -114,11 +114,9 @@ namespace Neo.Plugins
             FairyEngine oldEngine = testSession.engine;
             FairyEngine newEngine;
             logs.Clear();
-            FairyEngine.Log += CacheLog!;
-            newEngine = FairyEngine.Run(script, oldEngine.SnapshotCache.CloneCache(), this, container: tx, settings: system.Settings, gas: settings.MaxGasInvoke, oldEngine: oldEngine);
-            FairyEngine.Log -= CacheLog!;
+            newEngine = FairyEngine.Run(script, oldEngine.SnapshotCache.CloneCache(), this, container: tx, settings: system.Settings, gas: settings.MaxGasInvoke, oldEngine: oldEngine, logHandler: CacheLog);
             if (writeSnapshot && newEngine.State == VMState.HALT)
-                sessionStringToFairySession[session].engine = newEngine;
+                testSession.engine = newEngine;
 
             JObject json = new();
 
@@ -127,9 +125,9 @@ namespace Neo.Plugins
             {
                 NotifyEventArgs notification = newEngine.Notifications[i];
                 JObject notificationJson = new();
-                notificationJson["tx"] = notification.ScriptContainer.Hash.ToString();
+                notificationJson["tx"] = notification.ScriptContainer?.Hash.ToString();
                 notificationJson["scripthash"] = notification.ScriptHash.ToString();
-                notificationJson["contractname"] = NativeContract.ContractManagement.GetContract(newEngine.SnapshotCache, notification.ScriptHash)?.Manifest.Name;
+                notificationJson["contractname"] = NativeContract.ContractManagement.GetContract(newEngine.SnapshotCache, notification.ScriptHash)?.Manifest?.Name;
                 notificationJson["eventname"] = notification.EventName;
                 notificationJson["eventargs"] = notification.State.ToJson();
                 notifications.Add(notificationJson);
@@ -170,14 +168,17 @@ namespace Neo.Plugins
             if (json["exception"] != null)
             {
                 StringBuilder traceback = new();
-                try { if (newEngine.CallingScriptHash != null) traceback.Append($"CallingScriptHash={newEngine.CallingScriptHash}[{NativeContract.ContractManagement.GetContract(newEngine.SnapshotCache, newEngine.CallingScriptHash)?.Manifest.Name}]\r\n"); } catch { }
-                try { traceback.Append($"CurrentScriptHash={newEngine.CurrentScriptHash}[{NativeContract.ContractManagement.GetContract(newEngine.SnapshotCache, newEngine.CurrentScriptHash)?.Manifest.Name}]\r\n"); } catch { }
+                if (newEngine.CallingScriptHash != null)
+                    traceback.Append($"CallingScriptHash={newEngine.CallingScriptHash}[{NativeContract.ContractManagement.GetContract(newEngine.SnapshotCache, newEngine.CallingScriptHash)?.Manifest?.Name}]\r\n");
+                if (newEngine.CurrentScriptHash != null)
+                    traceback.Append($"CurrentScriptHash={newEngine.CurrentScriptHash}[{NativeContract.ContractManagement.GetContract(newEngine.SnapshotCache, newEngine.CurrentScriptHash)?.Manifest?.Name}]\r\n");
                 try { traceback.Append($"EntryScriptHash={newEngine.EntryScriptHash}\r\n"); } catch { }
-                traceback.Append(newEngine.FaultException.StackTrace);
+                if (newEngine.FaultException != null && newEngine.FaultException.StackTrace != null)
+                    traceback.Append(newEngine.FaultException.StackTrace);
                 foreach (Neo.VM.ExecutionContext context in newEngine.InvocationStack.Reverse())
                 {
                     UInt160 contextScriptHash = context.GetScriptHash();
-                    string? contextContractName = NativeContract.ContractManagement.GetContract(newEngine.SnapshotCache, contextScriptHash)?.Manifest.Name;
+                    string? contextContractName = NativeContract.ContractManagement.GetContract(newEngine.SnapshotCache, contextScriptHash)?.Manifest?.Name;
                     //try
                     {
                         if (contractScriptHashToAllInstructionPointerToSourceLineNum.ContainsKey(contextScriptHash) && contractScriptHashToAllInstructionPointerToSourceLineNum[contextScriptHash].ContainsKey((uint)context.InstructionPointer))
@@ -198,7 +199,7 @@ namespace Neo.Plugins
 
                 foreach (LogEventArgs log in logs)
                 {
-                    string? contractName = NativeContract.ContractManagement.GetContract(newEngine.SnapshotCache, log.ScriptHash)?.Manifest.Name;
+                    string? contractName = NativeContract.ContractManagement.GetContract(newEngine.SnapshotCache, log.ScriptHash)?.Manifest?.Name;
                     traceback.Append($"\r\n[{log.ScriptHash}] {contractName}: {log.Message}");
                 }
                 json["traceback"] = traceback.ToString();
@@ -214,12 +215,16 @@ namespace Neo.Plugins
             if (newEngine.State != VMState.FAULT)
             {
                 if (tx?.Witnesses == null)
+                {
                     ProcessInvokeWithWalletAndSnapshot(oldEngine, script, json, tx?.Signers, block: CreateDummyBlockWithTimestamp(oldEngine.SnapshotCache, system.Settings, timestamp: testSession.timestamp));
+                }
                 else
                 {
                     Wallet signatureWallet = oldEngine.runtimeArgs.fairyWallet == null ? defaultFairyWallet : oldEngine.runtimeArgs.fairyWallet;
+                    if (signatureWallet == null)
+                        throw new InvalidOperationException("No wallet available to calculate network fee.");
                     json["tx"] = Convert.ToBase64String(tx.ToArray());
-                    json["networkfee"] = tx.CalculateNetworkFee(oldEngine.SnapshotCache, system.Settings, (a) => signatureWallet.GetAccount(a)?.Contract?.Script).ToString();
+                    json["networkfee"] = tx.CalculateNetworkFee(oldEngine.SnapshotCache, system.Settings, (a) => signatureWallet?.GetAccount(a)?.Contract?.Script).ToString();
                 }
             }
             return json;

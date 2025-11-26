@@ -37,7 +37,9 @@ namespace Neo.Plugins
             FairySession testSession = GetOrCreateFairySession(session);
             FairyEngine oldEngine = testSession.engine;
             DataCache snapshot = oldEngine.SnapshotCache;
-            OracleRequest request = NativeContract.Oracle.GetRequest(snapshot, oracleRequestId);
+            OracleRequest? request = NativeContract.Oracle.GetRequest(snapshot, oracleRequestId);
+            if (request == null)
+                throw new ArgumentException($"Oracle request {oracleRequestId} not found.");
             uint height = NativeContract.Ledger.CurrentIndex(snapshot) + 1;
             ECPoint[] oracleNodes = NativeContract.RoleManagement.GetDesignatedByRole(snapshot, Role.Oracle, height);
             OracleResponse response = new OracleResponse() { Id = oracleRequestId, Code = oracleResponseCode, Result = result };
@@ -126,9 +128,9 @@ namespace Neo.Plugins
 
             // Calculate network fee
 
-            var oracleContract = NativeContract.ContractManagement.GetContract(snapshot, NativeContract.Oracle.Hash);
+            var oracleContract = NativeContract.ContractManagement.GetContract(snapshot, NativeContract.Oracle.Hash) ?? throw new InvalidOperationException("Oracle contract not found.");
             var engine = ApplicationEngine.Create(TriggerType.Verification, tx, snapshot.CloneCache(), settings: settings);
-            ContractMethodDescriptor md = oracleContract.Manifest.Abi.GetMethod("verify", -1);
+            ContractMethodDescriptor md = oracleContract.Manifest.Abi.GetMethod("verify", -1) ?? throw new InvalidOperationException("Oracle verify method not found.");
             engine.LoadContract(oracleContract, md, CallFlags.None);
             //if (engine.Execute() != VMState.HALT) return null;
             engine.Execute();

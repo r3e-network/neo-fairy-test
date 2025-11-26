@@ -20,10 +20,10 @@ namespace Neo.Plugins
     {
         public class FairyRpcMethodAttribute : RpcMethodAttribute { }
         public NeoSystem system;
-        public RpcServerSettings settings;
+        public RpcServersSettings settings;
         public FairyPlugin? fairyPlugin;
 
-        public Fairy(NeoSystem system, RpcServerSettings settings, FairyPlugin? fairyPlugin = null) : base(system, settings)
+        public Fairy(NeoSystem system, RpcServersSettings settings, FairyPlugin? fairyPlugin = null) : base(system, settings)
         {
             this.system = system;
             this.settings = settings;

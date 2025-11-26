@@ -14,19 +14,21 @@ using System.Collections.Concurrent;
 
 namespace Neo.Plugins
 {
+    #pragma warning disable CS8601
     public partial class Fairy
     {
         public readonly ConcurrentDictionary<string, FairySession> sessionStringToFairySession = new();
 
         public FairySession GetOrCreateFairySession(string session)
         {
-            FairySession? fairySession;
-            if (!sessionStringToFairySession.TryGetValue(session, out fairySession))
-            {  // we allow initializing a new session when executing
-                fairySession = NewFairySession(system, this);
-                sessionStringToFairySession[session] = fairySession;
-            }
-            return fairySession;
+            NeoSystem sys = system ?? throw new InvalidOperationException("System not initialized.");
+            var value = sessionStringToFairySession.GetOrAdd(session, _ => NewFairySession(sys, this));
+            return value!;
+        }
+
+        private bool TryGetFairySession(string session, out FairySession fairySession)
+        {
+            return sessionStringToFairySession.TryGetValue(session, out fairySession);
         }
 
         private FairyEngine BuildSnapshotWithDummyScript(FairyEngine? engine = null)
@@ -41,7 +43,7 @@ namespace Neo.Plugins
             foreach (var param in _params)
             {
                 string session = param!.AsString();
-                if (sessionStringToFairySession.TryGetValue(session, out _))
+                if (TryGetFairySession(session, out _))
                     json[session] = true;
                 else
                     json[session] = false;
@@ -57,7 +59,7 @@ namespace Neo.Plugins
             foreach (var s in _params)
             {
                 string str = s!.AsString();
-                json[str] = sessionStringToFairySession.Remove(str, out var _);
+                json[str] = sessionStringToFairySession.TryRemove(str, out _);
             }
             return json;
         }
@@ -78,8 +80,10 @@ namespace Neo.Plugins
         {
             string from = _params[0]!.AsString();
             string to = _params[1]!.AsString();
-            sessionStringToFairySession[to] = sessionStringToFairySession[from];
-            sessionStringToFairySession.Remove(from, out var _);
+            if (!TryGetFairySession(from, out FairySession? source))
+                throw new ArgumentException($"Snapshot `{from}` not found.");
+            sessionStringToFairySession[to] = source;
+            sessionStringToFairySession.TryRemove(from, out _);
             JObject json = new();
             json[to] = from;
             return json;
@@ -90,8 +94,10 @@ namespace Neo.Plugins
         {
             string from = _params[0]!.AsString();
             string to = _params[1]!.AsString();
+            if (!TryGetFairySession(from, out FairySession? source))
+                throw new ArgumentException($"Snapshot `{from}` not found.");
             FairySession testSessionTo = NewFairySession(system, this);
-            testSessionTo.engine = BuildSnapshotWithDummyScript(sessionStringToFairySession[from].engine);
+            testSessionTo.engine = BuildSnapshotWithDummyScript(source.engine);
             testSessionTo.debugEngine = null;
             sessionStringToFairySession[to] = testSessionTo;
             JObject json = new();
@@ -100,3 +106,4 @@ namespace Neo.Plugins
         }
     }
 }
+#pragma warning restore CS8601

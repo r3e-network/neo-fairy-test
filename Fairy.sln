@@ -5,7 +5,7 @@ VisualStudioVersion = 17.0.31919.166
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Fairy", "Fairy.csproj", "{4341DCDB-ED96-48E3-9F6C-AFBE1C2C9B7D}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "RpcServer", "..\neo-modules\src\RpcServer\RpcServer.csproj", "{7E26B998-1077-49E2-963F-B2166019B6F9}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "RpcServer", "..\neo\src\Plugins\RpcServer\RpcServer.csproj", "{7E26B998-1077-49E2-963F-B2166019B6F9}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

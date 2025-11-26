@@ -17,6 +17,7 @@ using Neo.SmartContract;
 using Neo.SmartContract.Native;
 using Neo.VM;
 using Neo.Wallets;
+using System;
 using System.Numerics;
 using System.Reflection;
 
@@ -27,14 +28,14 @@ namespace Neo.Plugins
         public static FairySession NewFairySession(NeoSystem system, Fairy? fairy = null, DataCache? snapshot = null)
         {
             if (fairy == null)
-                fairy = new(system, settings: RpcServerSettings.Default);
+                fairy = new(system, settings: RpcServersSettings.Default);
             return new FairySession(fairy, snapshot);
         }
 
         public static FairyEngine NewFairyEngine(NeoSystem system, Fairy? fairy = null, DataCache? snapshot = null)
         {
             if (fairy == null)
-                fairy = new(system, settings: RpcServerSettings.Default);
+                fairy = new(system, settings: RpcServersSettings.Default);
             return Fairy.FairyEngine.Run(new byte[] { 0x40 }, snapshot == null ? fairy.system.StoreView : snapshot, fairy, settings: fairy.system.Settings, gas: fairy.settings.MaxGasInvoke);
         }
 
@@ -42,7 +43,7 @@ namespace Neo.Plugins
         {
             readonly Fairy fairy;
             protected FairyEngine(TriggerType trigger, IVerifiable? container, DataCache snapshot, Block? persistingBlock, ProtocolSettings? settings, long gas, IDiagnostic? diagnostic, Fairy fairy, FairyEngine? oldEngine = null, bool copyRuntimeArgs = false)
-                : base(trigger, container, snapshot, persistingBlock, settings, gas, diagnostic, jumpTable: ComposeFairyJumpTable())
+                : base(trigger, container, snapshot, persistingBlock, settings ?? fairy.system.Settings, gas, diagnostic, jumpTable: ComposeFairyJumpTable())
             {
                 this.fairy = fairy;
                 if (oldEngine != null)
@@ -67,7 +68,8 @@ namespace Neo.Plugins
 
             public static FairyEngine Create(TriggerType trigger, IVerifiable? container, DataCache snapshot, Fairy fairy, Block? persistingBlock = null, ProtocolSettings? settings = null, long gas = TestModeGas, IDiagnostic? diagnostic = null, FairyEngine? oldEngine = null, bool copyRuntimeArgs = false)
             {
-                return new FairyEngine(trigger, container, snapshot, persistingBlock, settings, gas, diagnostic, fairy, oldEngine: oldEngine, copyRuntimeArgs: copyRuntimeArgs);
+                var protocolSettings = settings ?? fairy.system.Settings;
+                return new FairyEngine(trigger, container, snapshot, persistingBlock, protocolSettings, gas, diagnostic, fairy, oldEngine: oldEngine, copyRuntimeArgs: copyRuntimeArgs);
             }
 
             public new VMState State
@@ -94,7 +96,7 @@ namespace Neo.Plugins
                 while (State != VMState.HALT && State != VMState.FAULT)
                 {
                     uint currentInstructionPointer = (uint)CurrentContext!.InstructionPointer;
-                    UInt160 currentScripthash = CurrentScriptHash;
+                    UInt160? currentScripthash = CurrentScriptHash;
                     ExecuteNext();
                     if (currentScripthash != null && fairy.contractScriptHashToInstructionPointerToCoverage.ContainsKey(currentScripthash) && fairy.contractScriptHashToInstructionPointerToCoverage[currentScripthash].ContainsKey(currentInstructionPointer))
                         fairy.contractScriptHashToInstructionPointerToCoverage[currentScripthash][currentInstructionPointer] = true;
@@ -102,12 +104,16 @@ namespace Neo.Plugins
                 return State;
             }
 
-            public static FairyEngine Run(ReadOnlyMemory<byte> script, DataCache snapshot, Fairy fairy, IVerifiable? container = null, Block? persistingBlock = null, ProtocolSettings? settings = null, int offset = 0, long gas = TestModeGas, IDiagnostic? diagnostic = null, FairyEngine? oldEngine = null, bool copyRuntimeArgs = false)
+            public static FairyEngine Run(ReadOnlyMemory<byte> script, DataCache snapshot, Fairy fairy, IVerifiable? container = null, Block? persistingBlock = null, ProtocolSettings? settings = null, int offset = 0, long gas = TestModeGas, IDiagnostic? diagnostic = null, FairyEngine? oldEngine = null, bool copyRuntimeArgs = false, ApplicationEngine.OnLogEvent? logHandler = null)
             {
                 persistingBlock ??= CreateDummyBlockWithTimestamp(snapshot, settings ?? ProtocolSettings.Default, timestamp: null);
                 FairyEngine engine = Create(TriggerType.Application, container, snapshot, fairy, persistingBlock, settings, gas, diagnostic, oldEngine: oldEngine, copyRuntimeArgs: copyRuntimeArgs);
+                if (logHandler != null)
+                    engine.Log += logHandler;
                 engine.LoadScript(script, initialPosition: offset);
                 engine.Execute();
+                if (logHandler != null)
+                    engine.Log -= logHandler;
                 return engine;
             }
 
@@ -148,7 +154,7 @@ namespace Neo.Plugins
                 }
                 else
                 {
-                    throw new InvalidOperationException();
+                    throw new InvalidOperationException("Unexpected execution engine type");
                 }
             }
 
@@ -176,7 +182,7 @@ namespace Neo.Plugins
                 if (result != 0)
                     return result;
                 uint currentIndex = NativeContract.Ledger.CurrentIndex(SnapshotCache);
-                Block currentBlock = NativeContract.Ledger.GetBlock(SnapshotCache, currentIndex);
+                Block currentBlock = NativeContract.Ledger.GetBlock(SnapshotCache, currentIndex)!;
                 return currentBlock.Timestamp + ProtocolSettings.MillisecondsPerBlock;
             }
             public ulong GetFairyTime() => runtimeArgs.timestamp != null ? (ulong)runtimeArgs.timestamp : GetTime();
@@ -191,12 +197,12 @@ namespace Neo.Plugins
             if (_params[1] == null)
             {
                 timestamp = null;
-                sessionStringToFairySession[session].timestamp = null;
+                GetOrCreateFairySession(session).timestamp = null;
             }
             else
             {
                 timestamp = ulong.Parse(_params[1]!.AsString());
-                sessionStringToFairySession[session].timestamp = timestamp;
+                GetOrCreateFairySession(session).timestamp = timestamp;
             }
             JObject json = new();
             json[session] = timestamp;
@@ -210,7 +216,7 @@ namespace Neo.Plugins
             foreach (var s in _params)
             {
                 string session = s!.AsString();
-                json[session] = sessionStringToFairySession[session].timestamp;
+                json[session] = GetOrCreateFairySession(session).timestamp;
             }
             return json;
         }
@@ -220,7 +226,7 @@ namespace Neo.Plugins
         {
             string session = _params[0]!.AsString();
             string? designatedRandomString = _params[1]?.AsString();
-            FairySession fairySession = sessionStringToFairySession[session];
+            FairySession fairySession = GetOrCreateFairySession(session);
             if (designatedRandomString == null)
                 fairySession.designatedRandom = null;
             else
@@ -237,10 +243,8 @@ namespace Neo.Plugins
             foreach (var s in _params)
             {
                 string session = s!.AsString();
-                if (sessionStringToFairySession.ContainsKey(session))
-                    json[session] = sessionStringToFairySession[session].designatedRandom.ToString();
-                else
-                    json[session] = null;
+                FairySession fairySession = GetOrCreateFairySession(session);
+                json[session] = fairySession.designatedRandom?.ToString();
             }
             return json;
         }
@@ -250,7 +254,7 @@ namespace Neo.Plugins
         {
             string session = _params[0]!.AsString();
             bool setValue = _params[1]!.AsBoolean();
-            FairySession fairySession = sessionStringToFairySession[session];
+            FairySession fairySession = GetOrCreateFairySession(session);
             fairySession.checkWitnessReturnTrue = setValue;
             JObject json = new();
             json[session] = setValue;
@@ -264,10 +268,8 @@ namespace Neo.Plugins
             foreach (var s in _params)
             {
                 string session = s!.AsString();
-                if (sessionStringToFairySession.ContainsKey(session))
-                    json[session] = sessionStringToFairySession[session].checkWitnessReturnTrue;
-                else
-                    json[session] = null;
+                FairySession fairySession = GetOrCreateFairySession(session);
+                json[session] = fairySession.checkWitnessReturnTrue;
             }
             return json;
         }
@@ -275,7 +277,7 @@ namespace Neo.Plugins
         private static Block CreateDummyBlockWithTimestamp(DataCache snapshot, ProtocolSettings settings, ulong? timestamp = null, uint? index = null)
         {
             UInt256 hash = NativeContract.Ledger.CurrentHash(snapshot);
-            Block currentBlock = NativeContract.Ledger.GetBlock(snapshot, hash);
+            Block currentBlock = NativeContract.Ledger.GetBlock(snapshot, hash)!;
             return new Block
             {
                 Header = new Header
@@ -393,7 +395,7 @@ namespace Neo.Plugins
         internal void InitializeTimer()
         {
             if (settings.SessionEnabled)
-                timer = new(OnTimer, null, settings.SessionExpirationTime.Milliseconds, 60000);
+                timer = new(OnTimer, null, settings.SessionExpirationTime, TimeSpan.FromMinutes(1));
         }
 
         internal void OnTimer(object? state)
@@ -404,7 +406,7 @@ namespace Neo.Plugins
                     toBeDestroyed.Add((id, session));
             //Console.WriteLine(toBeDestroyed.Count);
             foreach (var (id, _) in toBeDestroyed)
-                sessionStringToFairySession.Remove(id, out _);
+                sessionStringToFairySession.TryRemove(id, out _);
 
             JArray debugInfoToBeDeleted = new();
             foreach (UInt160 k in contractScriptHashToSourceLineFilenames.Keys)
@@ -425,4 +427,3 @@ namespace Neo.Plugins
 
     }
 }
-

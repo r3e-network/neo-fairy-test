@@ -27,7 +27,7 @@ namespace Neo.Plugins
 {
     public partial class Fairy : RpcServer.RpcServer
     {
-        public IWebHost? websocketHost;
+        public IHost? websocketHost;
         protected readonly Dictionary<string, Func<JArray, object>> FairyRpcMethods = new();
         protected readonly Dictionary<string, Func<WebSocket, JArray, object>> webSocketNeoGoCompatibleMethods = new();
         protected readonly Dictionary<string, Func<WebSocket, JArray, CancellationToken, object>> webSocketMethods = new();
@@ -86,39 +86,45 @@ namespace Neo.Plugins
 
         public void StartWebsocketServer()
         {
-            websocketHost = new WebHostBuilder().UseKestrel(options => options.Listen(settings.BindAddress, settings.Port + 1, listenOptions =>
-            {
-                options.Limits.MaxConcurrentConnections = settings.MaxConcurrentConnections;
-                options.Limits.KeepAliveTimeout = TimeSpan.FromMinutes(5);
-                options.Limits.RequestHeadersTimeout = TimeSpan.FromSeconds(15);
-
-                if (string.IsNullOrEmpty(settings.SslCert)) return;
-                listenOptions.UseHttps(settings.SslCert, settings.SslCertPassword, httpsConnectionAdapterOptions =>
+            var builder = Host.CreateDefaultBuilder()
+                .ConfigureWebHostDefaults(webBuilder =>
                 {
-                    if (settings.TrustedAuthorities is null || settings.TrustedAuthorities.Length == 0)
-                        return;
-                    httpsConnectionAdapterOptions.ClientCertificateMode = ClientCertificateMode.RequireCertificate;
-                    httpsConnectionAdapterOptions.ClientCertificateValidation = (cert, chain, err) =>
+                    webBuilder.ConfigureKestrel(options =>
                     {
-                        if (err != SslPolicyErrors.None)
-                            return false;
-                        X509Certificate2 authority = chain!.ChainElements[^1].Certificate;
-                        return settings.TrustedAuthorities.Contains(authority.Thumbprint);
-                    };
-                });
-            }))
-            .Configure(app =>
-            {
-                app.UseWebSockets(new WebSocketOptions { KeepAliveInterval = TimeSpan.FromMinutes(5) });
-                app.Run(ProcessWebsocketAsync);
-            })
-            .ConfigureServices(services =>
-            {
-                // Do not use compression?
-                // Vulnerable to CRIME/BREACH attacks?
-            })
-            .Build();
+                        options.Listen(settings.BindAddress, settings.Port + 1, listenOptions =>
+                        {
+                            options.Limits.MaxConcurrentConnections = settings.MaxConcurrentConnections;
+                            options.Limits.KeepAliveTimeout = TimeSpan.FromMinutes(5);
+                            options.Limits.RequestHeadersTimeout = TimeSpan.FromSeconds(15);
 
+                            if (string.IsNullOrEmpty(settings.SslCert)) return;
+                            listenOptions.UseHttps(settings.SslCert, settings.SslCertPassword, httpsConnectionAdapterOptions =>
+                            {
+                                if (settings.TrustedAuthorities is null || settings.TrustedAuthorities.Length == 0)
+                                    return;
+                                httpsConnectionAdapterOptions.ClientCertificateMode = ClientCertificateMode.RequireCertificate;
+                                httpsConnectionAdapterOptions.ClientCertificateValidation = (cert, chain, err) =>
+                                {
+                                    if (err != SslPolicyErrors.None)
+                                        return false;
+                                    X509Certificate2 authority = chain!.ChainElements[^1].Certificate;
+                                    return settings.TrustedAuthorities.Contains(authority.Thumbprint);
+                                };
+                            });
+                        });
+                    });
+                    webBuilder.Configure(app =>
+                    {
+                        app.UseWebSockets(new WebSocketOptions { KeepAliveInterval = TimeSpan.FromMinutes(5) });
+                        app.Run(ProcessWebsocketAsync);
+                    });
+                    webBuilder.ConfigureServices(services =>
+                    {
+                        // Intentionally left blank: no DI services required for this lightweight host.
+                    });
+                });
+
+            websocketHost = builder.Build();
             websocketHost.Start();
             ConsoleHelper.Info($"Fairy websocket server running at {settings.BindAddress}:{settings.Port + 1}\n");
         }

@@ -68,15 +68,138 @@ Instructions for running neo-cli and RpcServer from full source codes for debugg
 
 Neo <= 3.7.4:
 
-Consider cloning [neo-modules](https://github.com/neo-project/neo-modules) and building such a directory: `neo-modules/src/Fairy` and place everything in my repo into your `neo-modules/src/Fairy`. Build `Fairy.csproj`.
+- Clone [neo-modules](https://github.com/neo-project/neo-modules), copy this repo into `neo-modules/src/Fairy`, and build `Fairy.csproj`.
+- Alternatively, open `Fairy.sln` directly and point the project references to your neo-modules paths.
 
-Alternatively you can use `Fairy.sln` to build your own solution.
+Neo > 3.7.4 (merged repo, **default now**):
 
-You probably have to change the directories of dependencies in `Fairy.csproj`
+- Use the mono-repo at `neo/src/Plugins`. `Fairy.csproj` is already wired to prefer that layout.
+- Target framework: **net10.0** (matches current neo). Ensure the .NET 10 SDK is installed.
+- Build from the repo root: `dotnet build Fairy.csproj` (or the solution). No extra steps required if your neo repo lives at `../neo`.
 
-Neo > 3.7.4:
+#### Quick usage (RPC highlights)
 
-neo-modules have been archived and migrated into neo repository. Just build from `neo/src/Plugins`.
+1) Start neo-cli with the Fairy plugin (place the built `Fairy.dll` + configs in `neo-cli/bin/Debug/net10.0/Plugins/Fairy/`).
+
+2) Hello/health:
+
+```json
+{"jsonrpc":"2.0","method":"HelloFairy","params":[],"id":1}
+```
+
+3) Create a session and fund it:
+
+```json
+{"jsonrpc":"2.0","method":"SetGasBalance","params":["mysession","Naa...accountHash...",10000000000],"id":1}
+```
+
+4) Deploy virtually (no on-chain write):
+
+```json
+{"jsonrpc":"2.0","method":"VirtualDeploy","params":["mysession","<base64.nef>","<manifest-json-string>",[]],"id":1}
+```
+
+5) Invoke with snapshot persistence:
+
+```json
+{"jsonrpc":"2.0","method":"InvokeFunctionWithSession","params":["mysession",true,"<contract-hash>","methodName",[{"type":"String","value":"hi"}],[{"account":"<hash>","scopes":"CalledByEntry"}]],"id":1}
+```
+
+6) Debug with breakpoints:
+
+- Register debug info once: `SetDebugInfo(contractHash, nefdbgnfoBase64Zip, dumpnefTxt)`
+- Set source breakpoints: `SetSourceCodeBreakpoints([contractHash,"File.cs","42",...])`
+- Start debug run: `DebugFunctionWithSession("mysession",true,contractHash,"method",args,signers)`
+- Step: `DebugStepOver/DebugStepInto/DebugStepOut`
+- Inspect: `GetLocalVariables/GetArguments/GetEvaluationStack/GetVariableValueByName`
+
+7) WebSocket (default port `rpcPort+1`): connect and send e.g.
+
+```json
+{"jsonrpc":"2.0","method":"subscribecommittedblock","params":[],"needresponse":true,"id":1}
+```
+
+For detailed APIs, read the source; the method names are decorated with `FairyRpcMethod` and `Websocket*Method` attributes.
+
+#### Relay to testnet/mainnet (real transactions)
+
+- Open a real wallet in neo-cli (or set a session wallet via `SetSessionFairyWalletWithNep2/Wif`).
+- Deploy to chain:
+
+```json
+{"jsonrpc":"2.0","method":"RelayDeployContract","params":[null,"<base64.nef>","<manifest-json-string>",null,[{"account":"<wallet-hash>","scopes":"CalledByEntry"}]],"id":1}
+```
+
+- Invoke to chain:
+
+```json
+{"jsonrpc":"2.0","method":"RelayInvokeFunction","params":[null,"<contract-hash>","methodName",[{"type":"String","value":"hi"}],[{"account":"<wallet-hash>","scopes":"CalledByEntry"}]],"id":1}
+```
+
+Both return `hash`, `tx` (base64), `networkfee`, `sysfee`, and `pendingsignature` if more signatures are needed.
+
+#### WebSocket quick client (Python)
+
+```python
+import asyncio, json, websockets
+
+async def main():
+    async with websockets.connect("ws://127.0.0.1:16869") as ws:
+        await ws.send(json.dumps({"jsonrpc":"2.0","method":"subscribecommittedblock","params":[],"needresponse":True,"id":1}))
+        print("Subscribed, waiting for blocks...")
+        async for msg in ws:
+            print(msg)
+
+asyncio.run(main())
+```
+> Tip: if you run `scripts/smoke_client.py`, install `requests` and `websockets` for Python first, or the script will skip the WS portion.
+
+#### Tips
+
+- Snapshots are keyed by session name. Reuse the same session to accumulate storage changes; copy/rename sessions to branch test states.
+- The debugger runs on a copy of the test snapshot. Debugging will not mutate your test snapshot; re-run to reset state.
+- `SetSnapshotTimestamp/Random/CheckWitness` are per-session knobs; remember to set them again after copying a snapshot if needed.
+- If you see missing contract errors, ensure `SetDebugInfo` was called for that contract hash before setting breakpoints.
+- Network fee calculation with custom signers requires a wallet; either use the default fairy wallet or set a session wallet via `SetSessionFairyWalletWithNep2/Wif`.
+
+#### Debugger walkthrough (example payloads)
+
+1) Register debug info (once per contract/hash):
+
+```json
+{"jsonrpc":"2.0","method":"SetDebugInfo","params":["<contract-hash>","<nefdbgnfo-base64-zip>","<dumpnef-txt-content>"],"id":1}
+```
+
+2) Set breakpoints by source file/line:
+
+```json
+{"jsonrpc":"2.0","method":"SetSourceCodeBreakpoints","params":["<contract-hash>","File.cs","42","File.cs","60"],"id":1}
+```
+
+3) Run debug session (inherits test snapshot of the same session):
+
+```json
+{"jsonrpc":"2.0","method":"DebugFunctionWithSession","params":["mysession",true,"<contract-hash>","methodName",[{"type":"Integer","value":"1"}],[{"account":"<hash>","scopes":"CalledByEntry"}]],"id":1}
+```
+
+4) Step/inspect:
+
+- `DebugStepOver`, `DebugStepInto`, `DebugStepOut`
+- Inspect locals/args/stack: `GetLocalVariables`, `GetArguments`, `GetEvaluationStack`
+- Fetch a variable by name: `GetVariableValueByName`
+
+5) Continue until next breakpoint/return:
+
+```json
+{"jsonrpc":"2.0","method":"DebugContinue","params":["mysession"],"id":1}
+```
+
+#### Troubleshooting
+
+- **`Contract not found` during breakpoint/debug**: Register debug info for the contract (`SetDebugInfo`) before setting breakpoints. Make sure the hash matches the deployed script in the session snapshot.
+- **`No wallet available for signing`**: Use the built-in fairy wallet (default) or set a session wallet. Network fee estimation and real signing need a wallet.
+- **`Transaction not found in N blocks`** from `AwaitConfirmedTransaction`: Increase `waitBlockCount` or verify the transaction was actually relayed (for virtual calls it won’t appear on-chain).
+- **Obsolete WebHost warnings**: Already resolved; ensure you’re building net10.0 against the merged neo repo.
 
 #### Usage
 
@@ -155,4 +278,3 @@ And how to calculate the network fee? `Fairy.Wallet.cs` offers a default `FairyW
 **Remember not to relay such transactions to the real blockchain!** You can still use the `OpenWallet` and `InvokeFunction` methods of `RpcServer` to build real transactions and actually relay them. 
 
 Sometimes you may still need to simulate the actual single- or multi-sig for a transaction, and in such cases you are willing to **give out the actual private keys**. I have let Fairy support single-signature in `ForceSignMessage` and `ForceSignTransaction`. Multi-account is supported by FairyWallet, but for now we are not able to sign with multiple accounts.
-

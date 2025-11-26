@@ -140,7 +140,7 @@ namespace Neo.Plugins
         protected virtual JToken SetSessionFairyWalletWithNep2(JArray _params)
         {
             string sessionString = _params[0]!.AsString();
-            FairySession session = sessionStringToFairySession[sessionString];
+            FairySession session = GetOrCreateFairySession(sessionString);
             JObject json = new();
             string nep2 = _params[1]!.AsString();
             string password = _params[2]!.AsString();
@@ -161,7 +161,7 @@ namespace Neo.Plugins
         protected virtual JToken SetSessionFairyWalletWithWif(JArray _params)
         {
             string sessionString = _params[0]!.AsString();
-            FairySession session = sessionStringToFairySession[sessionString];
+            FairySession session = GetOrCreateFairySession(sessionString);
             string wif = _params[1]!.AsString();
             FairyWallet wallet = new FairyWallet(wif, system.Settings);
             JObject json = new();
@@ -200,7 +200,7 @@ namespace Neo.Plugins
         {
             string session = _params[0]!.AsString();
             FairySession fairySession = GetOrCreateFairySession(session);
-            Wallet signatureWallet = fairySession.engine.runtimeArgs.fairyWallet == null ? defaultFairyWallet : fairySession.engine.runtimeArgs.fairyWallet;
+            Wallet wallet = fairySession.engine.runtimeArgs.fairyWallet ?? defaultFairyWallet ?? throw new InvalidOperationException("No wallet available for signing.");
             byte[] message = Convert.FromBase64String(_params[1]!.AsString());
             NamedCurveHash namedCurveHash = _params.Count > 2 ? _params[2]!.AsEnum<NamedCurveHash>() : NamedCurveHash.secp256r1SHA256;
             (Cryptography.ECC.ECCurve curve, HashAlgorithm HashAlgorithm) = namedCurveHash switch
@@ -216,10 +216,11 @@ namespace Neo.Plugins
                 _ => throw new NotImplementedException($"Invalid namedCurveHash {namedCurveHash}"),
             };
             JObject json = new();
-            KeyPair keyPair = signatureWallet.GetAccounts().First().GetKey();
-            json["signed"] = Convert.ToBase64String(
-                Crypto.Sign(message, keyPair.PrivateKey, curve, HashAlgorithm)
-            );
+#pragma warning disable CS8600, CS8602
+            WalletAccount firstAccount = wallet.GetAccounts().FirstOrDefault() ?? throw new InvalidOperationException("No accounts in wallet.");
+            KeyPair keyPair = firstAccount.GetKey();
+            json["signed"] = Convert.ToBase64String(Crypto.Sign(message, keyPair.PrivateKey, curve, HashAlgorithm));
+#pragma warning restore CS8600, CS8602
             return json;
         }
 
@@ -229,12 +230,14 @@ namespace Neo.Plugins
             string session = _params[0]!.AsString();
 
             FairySession fairySession = GetOrCreateFairySession(session);
-            Wallet signatureWallet = fairySession.engine.runtimeArgs.fairyWallet == null ? defaultFairyWallet : fairySession.engine.runtimeArgs.fairyWallet;
+            Wallet wallet = fairySession.engine.runtimeArgs.fairyWallet ?? defaultFairyWallet ?? throw new InvalidOperationException("No wallet available for signing.");
+            WalletAccount firstAccount = wallet.GetAccounts().First();
             DataCache snapshotForSignature = fairySession.engine.SnapshotCache.CloneCache();
 
             byte[] script = Convert.FromBase64String(_params[1]!.AsString());
             Signer[]? signers = _params.Count >= 3 ? SignersFromJson((JArray)_params[2]!, system.Settings) : null;
-            if (signers != null && (signers.Length > 1 || signers[0].Account != signatureWallet.GetAccounts().First().ScriptHash))
+            Signer[] signerArray = signers ?? Array.Empty<Signer>();
+            if (signerArray.Length > 1 || (signerArray.Length == 1 && signerArray[0].Account != firstAccount.ScriptHash))
                 throw new("Multiple signature not supported by FairyWallet for now");
             //JArray WIFprivateKeys = (JArray)_params[...];
             long systemFee = _params.Count >= 4 ? long.Parse(_params[3]!.AsString()) : 1000_0000;
@@ -248,14 +251,15 @@ namespace Neo.Plugins
                 Nonce = nonce,
                 Script = script,
                 ValidUntilBlock = validUntilBlock,
-                Signers = signers,
+                Signers = signerArray,
                 Attributes = Array.Empty<TransactionAttribute>(),
-                SystemFee = systemFee
+                SystemFee = systemFee,
+                Witnesses = Array.Empty<Witness>()
             };
-            tx.NetworkFee = networkFee ?? tx.CalculateNetworkFee(snapshotForSignature, system.Settings, (a) => signatureWallet.GetAccount(a)?.Contract?.Script);
+            tx.NetworkFee = networkFee ?? tx.CalculateNetworkFee(snapshotForSignature, system.Settings, (a) => wallet.GetAccount(a)?.Contract?.Script);
 
             ContractParametersContext context = new(snapshotForSignature, tx, system.Settings.Network);
-            signatureWallet.Sign(context);
+            wallet.Sign(context);
             tx.Witnesses = context.GetWitnesses();
 
             JObject result = new();
