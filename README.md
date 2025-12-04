@@ -22,6 +22,7 @@ Fairy is a Neo N3 RpcServer plugin for fast, repeatable contract testing, simula
 - `scripts/smoke-http.sh` – minimal HelloFairy RPC check against a running neo-cli+Fairy instance.
 - `scripts/smoke-e2e.{sh,ps1}` – boots neo-cli with packaged Fairy plugin and runs the HelloFairy smoke.
 - `scripts/build-examples.{sh,ps1}` – compile the sample contracts (requires `nccs`) into `examples/**/out/`.
+- Network targeting: `--network mainnet|testnet|neo-express|<rpc-url>` on deploy; env overrides `FAIRY_MAINNET_RPC`, `FAIRY_TESTNET_RPC`, `FAIRY_EXPRESS_RPC`; `fairy.toml` supports `mainnet_rpc`, `testnet_rpc`, `neoexpress_rpc`.
 - `Fairy.Full.sln` – single entry-point solution for all projects and tests.
 - `examples/` – ready-to-adapt sample workspace (see “Examples” below).
 
@@ -67,7 +68,7 @@ End-to-end smoke (requires built neo-cli at NeoRoot): `CONFIG=Release RPC_URL=ht
 ### Example workflow: DexProject (virtual)
 1) Install the compiler (align with your target Neo/neo-cli; defaults assume `Neo.Compiler.CSharp` 3.7.4): for example `dotnet tool install Neo.Compiler.CSharp -g --version 3.7.4` (or set `NCCS=/path/to/nccs` for the scripts; override version with `NCCS_VERSION`/`NccsVersion`).
 2) Build contracts: `scripts/build-examples.sh` (outputs to `examples/DexProject/out/`).
-3) Start your Fairy-enabled neo-cli (or use `scripts/smoke-e2e.sh` to boot a temp instance).
+3) Start your Fairy-enabled neo-cli (or use `scripts/smoke-e2e.sh` to boot a temp instance). Pick networks with `--network mainnet|testnet|neo-express|<rpc-url>`; defaults can be overridden via `FAIRY_MAINNET_RPC` / `FAIRY_TESTNET_RPC` / `FAIRY_EXPRESS_RPC` or `fairy.toml` (`mainnet_rpc`/`testnet_rpc`/`neoexpress_rpc`).
 4) Virtual deploy the token and call a method:
    ```
    python scripts/workspace_client.py --workspace dex --alias token \

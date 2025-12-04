@@ -158,6 +158,12 @@ public sealed class FairyConfig
         sb.AppendLine($"network = \"{Fairy.Network}\"");
         sb.AppendLine($"gas_limit = {Fairy.GasLimit}");
         sb.AppendLine($"session_timeout = {Fairy.SessionTimeout}");
+        if (!string.IsNullOrWhiteSpace(Fairy.MainnetRpcUrl))
+            sb.AppendLine($"mainnet_rpc = \"{Fairy.MainnetRpcUrl}\"");
+        if (!string.IsNullOrWhiteSpace(Fairy.TestnetRpcUrl))
+            sb.AppendLine($"testnet_rpc = \"{Fairy.TestnetRpcUrl}\"");
+        if (!string.IsNullOrWhiteSpace(Fairy.NeoExpressRpcUrl))
+            sb.AppendLine($"neoexpress_rpc = \"{Fairy.NeoExpressRpcUrl}\"");
         sb.AppendLine();
 
         sb.AppendLine("[deploy]");
@@ -240,7 +246,10 @@ public sealed class FairyConfig
             RpcUrl = table.GetString("rpc_url") ?? "http://localhost:16868",
             Network = table.GetString("network") ?? "mainnet",
             GasLimit = (int)(table.GetLong("gas_limit") ?? 200),
-            SessionTimeout = (int)(table.GetLong("session_timeout") ?? 86400)
+            SessionTimeout = (int)(table.GetLong("session_timeout") ?? 86400),
+            MainnetRpcUrl = table.GetString("mainnet_rpc"),
+            TestnetRpcUrl = table.GetString("testnet_rpc"),
+            NeoExpressRpcUrl = table.GetString("neoexpress_rpc")
         };
     }
 
@@ -316,6 +325,9 @@ public sealed class FairyRuntimeConfig
     public string Network { get; set; } = "mainnet";
     public int GasLimit { get; set; } = 200;
     public int SessionTimeout { get; set; } = 86400;
+    public string? MainnetRpcUrl { get; set; }
+    public string? TestnetRpcUrl { get; set; }
+    public string? NeoExpressRpcUrl { get; set; }
 }
 
 /// <summary>

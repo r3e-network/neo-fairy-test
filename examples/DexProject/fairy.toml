@@ -17,7 +17,8 @@ optimize = false
 
 [fairy]
 rpc_url = "http://localhost:16868"
-network = "mainnet"
+network = "neo-express" # switch between mainnet/testnet/neo-express or custom RPC URL
+neoexpress_rpc = "http://localhost:5001" # default neo-express RPC
 gas_limit = 200
 session_timeout = 86400
 

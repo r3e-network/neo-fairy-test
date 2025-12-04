@@ -4,6 +4,7 @@
 using System.CommandLine;
 using Neo.Fairy.Core.Models;
 using Spectre.Console;
+using Neo.Fairy.Core.Configuration;
 
 namespace Neo.Fairy.Cli.Commands;
 
@@ -97,9 +98,10 @@ public static class DeployCommand
 
         // Determine deployment mode
         var isVirtual = !string.IsNullOrEmpty(session);
+        var (resolvedNetwork, rpcUrl) = NetworkResolver.Resolve(network, project.Config.Fairy);
         var targetDescription = isVirtual
             ? $"session '{session}'"
-            : network ?? project.Config.Fairy.Network;
+            : $"{resolvedNetwork} ({rpcUrl})";
 
         if (dryRun)
         {
@@ -133,7 +135,7 @@ public static class DeployCommand
                     {
                         // Actual deployment would go here
                         var result = await DeployContractAsync(
-                            project, artifact, session, network, wallet);
+                            project, artifact, session, resolvedNetwork, rpcUrl, wallet);
                         results.Add(result);
                     }
                 }
@@ -177,6 +179,7 @@ public static class DeployCommand
         ContractArtifact artifact,
         string? session,
         string? network,
+        string rpcUrl,
         string? wallet)
     {
         // Placeholder implementation
