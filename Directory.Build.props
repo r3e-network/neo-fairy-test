@@ -1,0 +1,8 @@
+<Project>
+  <!-- Optional override for the Neo repo path. Defaults to ../neo relative to repo root. -->
+  <PropertyGroup>
+    <!-- Default Neo repo path: one level up from this repo (../neo). Override by setting NeoRoot MSBuild property or NEOROOT env var. -->
+    <NeoRoot Condition="'$(NeoRoot)'=='' and '$(NEOROOT)'!=''">$(NEOROOT)</NeoRoot>
+    <NeoRoot Condition="'$(NeoRoot)'==''">$(MSBuildThisFileDirectory)..\neo</NeoRoot>
+  </PropertyGroup>
+</Project>

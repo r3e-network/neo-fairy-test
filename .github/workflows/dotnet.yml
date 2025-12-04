@@ -1,0 +1,86 @@
+name: dotnet
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+    inputs:
+      run-e2e:
+        description: "Run end-to-end smoke (requires building neo-cli)"
+        required: false
+        default: "false"
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj') }}
+          restore-keys: |
+            nuget-${{ runner.os }}-
+      - name: Cache neo clone
+        id: cache-neo
+        uses: actions/cache@v4
+        with:
+          path: ../neo
+          key: neo-${{ runner.os }}-v1
+      - name: Checkout neo (for project references)
+        if: steps.cache-neo.outputs.cache-hit != 'true'
+        run: git clone --depth 1 --recurse-submodules https://github.com/neo-project/neo ../neo
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Restore
+        run: dotnet restore Fairy.Full.sln
+      - name: Build
+        run: dotnet build Fairy.Full.sln --no-restore -c Release
+      - name: Test
+        run: dotnet test Fairy.Full.sln --no-build --verbosity normal
+
+  smoke-e2e:
+    if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.run-e2e == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj') }}
+          restore-keys: |
+            nuget-${{ runner.os }}-
+      - name: Cache neo clone
+        id: cache-neo
+        uses: actions/cache@v4
+        with:
+          path: ../neo
+          key: neo-${{ runner.os }}-v1
+      - name: Checkout neo (for project references)
+        if: steps.cache-neo.outputs.cache-hit != 'true'
+        run: git clone --depth 1 --recurse-submodules https://github.com/neo-project/neo ../neo
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Build neo-cli (Release)
+        run: dotnet build ../neo/neo-cli/neo-cli.csproj -c Release
+      - name: Restore Fairy.Full.sln
+        run: dotnet restore Fairy.Full.sln
+      - name: E2E smoke
+        env:
+          NEOROOT: ../neo
+          RPC_URL: http://127.0.0.1:16868
+          LOG_PATH: /tmp/neo-cli.log
+        run: |
+          scripts/smoke-e2e.sh
+      - name: Upload neo-cli log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: neo-cli-log
+          path: /tmp/neo-cli.log

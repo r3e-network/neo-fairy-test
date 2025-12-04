@@ -20,6 +20,7 @@ using Neo.SmartContract;
 using Neo.SmartContract.Native;
 using Neo.VM;
 using System.Collections.Concurrent;
+using System.Linq;
 using System.Net.WebSockets;
 
 namespace Neo.Plugins
@@ -27,7 +28,7 @@ namespace Neo.Plugins
     public partial class Fairy : RpcServer.RpcServer
     {
         protected uint subscriptionId = 0;
-        protected SemaphoreSlim subscriptionIdSemaphore = new(1);
+        private readonly object subscriptionsLock = new();
         protected Dictionary<string, HashSet<WebSocketSubscriptionNeoGoCompatible>> methodNameToSubscriptions = new();
         protected ConcurrentDictionary<uint, WebSocketSubscriptionNeoGoCompatible> idToSubscriptions = new();
 
@@ -49,12 +50,15 @@ namespace Neo.Plugins
 
         protected void RegisterWebSocketNeoGoCompatible()
         {
-            methodNameToSubscriptions["block_added"] = new();
-            methodNameToSubscriptions["transaction_added"] = new();
-            methodNameToSubscriptions["transaction_removed"] = new();
-            methodNameToSubscriptions["notification_from_execution"] = new();
-            methodNameToSubscriptions["transaction_executed"] = new();
-            methodNameToSubscriptions["notary_request_event"] = new();
+            lock (subscriptionsLock)
+            {
+                methodNameToSubscriptions["block_added"] = new();
+                methodNameToSubscriptions["transaction_added"] = new();
+                methodNameToSubscriptions["transaction_removed"] = new();
+                methodNameToSubscriptions["notification_from_execution"] = new();
+                methodNameToSubscriptions["transaction_executed"] = new();
+                methodNameToSubscriptions["notary_request_event"] = new();
+            }
 
             Blockchain.Committing += OnBlockAdded;
             system.MemPool.TransactionAdded += OnTransactionAdded;
@@ -65,12 +69,16 @@ namespace Neo.Plugins
 
         protected void CloseSubscriptions(IEnumerable<WebSocketSubscriptionNeoGoCompatible> subscriptionsToClose)
         {
-            foreach (WebSocketSubscriptionNeoGoCompatible subscription in subscriptionsToClose)
+            lock (subscriptionsLock)
             {
-                methodNameToSubscriptions[subscription.method].Remove(subscription);
-                idToSubscriptions.TryRemove(subscription.subscriptionId, out _);
-                subscription.webSocket.Dispose();
+                foreach (WebSocketSubscriptionNeoGoCompatible subscription in subscriptionsToClose)
+                {
+                    methodNameToSubscriptions[subscription.method].Remove(subscription);
+                    idToSubscriptions.TryRemove(subscription.subscriptionId, out _);
+                }
             }
+            foreach (WebSocketSubscriptionNeoGoCompatible subscription in subscriptionsToClose)
+                subscription.webSocket.Dispose();
         }
 
         /// <summary>
@@ -107,7 +115,14 @@ namespace Neo.Plugins
         {
             HashSet<WebSocketSubscriptionNeoGoCompatible> subscriptionsToClose = new();
             ConcurrentQueue<Task> webSocketTasks = new();
-            foreach (WebSocketSubscriptionNeoGoCompatible subscription in methodNameToSubscriptions["block_added"])
+            List<WebSocketSubscriptionNeoGoCompatible> subscribers;
+            lock (subscriptionsLock)
+            {
+                if (!methodNameToSubscriptions.TryGetValue("block_added", out var set) || set.Count == 0)
+                    return;
+                subscribers = set.ToList();
+            }
+            foreach (WebSocketSubscriptionNeoGoCompatible subscription in subscribers)
             {
                 JObject _params = subscription.@params;
                 if (_params.ContainsProperty("till") && _params["till"]!.AsNumber() < block.Index)
@@ -138,7 +153,14 @@ namespace Neo.Plugins
         {
             HashSet<WebSocketSubscriptionNeoGoCompatible> subscriptionsToClose = new();
             ConcurrentQueue<Task> webSocketTasks = new();
-            foreach (WebSocketSubscriptionNeoGoCompatible subscription in methodNameToSubscriptions["transaction_removed"])
+            List<WebSocketSubscriptionNeoGoCompatible> subscribers;
+            lock (subscriptionsLock)
+            {
+                if (!methodNameToSubscriptions.TryGetValue("transaction_removed", out var set) || set.Count == 0)
+                    return;
+                subscribers = set.ToList();
+            }
+            foreach (WebSocketSubscriptionNeoGoCompatible subscription in subscribers)
             {
                 JObject returnedJson = new();
                 returnedJson["jsonrpc"] = "2.0";
@@ -157,12 +179,19 @@ namespace Neo.Plugins
             CloseSubscriptions(subscriptionsToClose);
         }
 
-        #pragma warning disable CS8600, CS8602, CS8604
+#pragma warning disable CS8600, CS8602, CS8604
         protected async void OnTransactionAdded(object? sender, Transaction tx)
         {
             HashSet<WebSocketSubscriptionNeoGoCompatible> subscriptionsToClose = new();
             ConcurrentQueue<Task> webSocketTasks = new();
-            foreach (WebSocketSubscriptionNeoGoCompatible subscription in methodNameToSubscriptions["transaction_added"])
+            List<WebSocketSubscriptionNeoGoCompatible> subscribers;
+            lock (subscriptionsLock)
+            {
+                if (!methodNameToSubscriptions.TryGetValue("transaction_added", out var set) || set.Count == 0)
+                    return;
+                subscribers = set.ToList();
+            }
+            foreach (WebSocketSubscriptionNeoGoCompatible subscription in subscribers)
             {
                 JObject _params = subscription.@params;
                 if (_params.ContainsProperty("sender"))
@@ -186,7 +215,7 @@ namespace Neo.Plugins
                         continue;  // wanted sender not in tx.Sender or tx.Signers; do not send anything in websocket
                     }
                 }
-sendMessage:
+            sendMessage:
                 JObject returnedJson = new();
                 returnedJson["jsonrpc"] = "2.0";
                 returnedJson["method"] = "transaction_added";
@@ -206,7 +235,14 @@ sendMessage:
         {
             HashSet<WebSocketSubscriptionNeoGoCompatible> subscriptionsToClose = new();
             ConcurrentQueue<Task> webSocketTasks = new();
-            foreach (WebSocketSubscriptionNeoGoCompatible subscription in methodNameToSubscriptions["notification_from_execution"])
+            List<WebSocketSubscriptionNeoGoCompatible> subscribers;
+            lock (subscriptionsLock)
+            {
+                if (!methodNameToSubscriptions.TryGetValue("notification_from_execution", out var set) || set.Count == 0)
+                    return;
+                subscribers = set.ToList();
+            }
+            foreach (WebSocketSubscriptionNeoGoCompatible subscription in subscribers)
             {
                 JObject _params = subscription.@params;
                 foreach (Blockchain.ApplicationExecuted app in applicationExecutedList)
@@ -259,7 +295,14 @@ sendMessage:
         {
             HashSet<WebSocketSubscriptionNeoGoCompatible> subscriptionsToClose = new();
             ConcurrentQueue<Task> webSocketTasks = new();
-            foreach (WebSocketSubscriptionNeoGoCompatible subscription in methodNameToSubscriptions["transaction_executed"])
+            List<WebSocketSubscriptionNeoGoCompatible> subscribers;
+            lock (subscriptionsLock)
+            {
+                if (!methodNameToSubscriptions.TryGetValue("transaction_executed", out var set) || set.Count == 0)
+                    return;
+                subscribers = set.ToList();
+            }
+            foreach (WebSocketSubscriptionNeoGoCompatible subscription in subscribers)
             {
                 JObject _params = subscription.@params;
                 foreach (Blockchain.ApplicationExecuted app in applicationExecutedList)
@@ -301,7 +344,7 @@ sendMessage:
                         if (_params.ContainsProperty("state") && _params["state"]!.AsString() != Enum.GetName(app.VMState))
                             continue;
                     }
-sendMessage:
+                sendMessage:
                     JObject returnedJson = new();
                     returnedJson["jsonrpc"] = "2.0";
                     returnedJson["method"] = "transaction_executed";
@@ -317,23 +360,30 @@ sendMessage:
             await Task.WhenAll(webSocketTasks);
             CloseSubscriptions(subscriptionsToClose);
         }
-        #pragma warning restore CS8600, CS8602, CS8604
+#pragma warning restore CS8600, CS8602, CS8604
 
         [WebsocketNeoGoCompatibleMethod]
         protected virtual object Subscribe(WebSocket webSocket, JArray _params)
         {
             string methodName = _params[0]!.AsString();
-            if (!methodNameToSubscriptions.ContainsKey(methodName))
-                throw new NotImplementedException(methodName);
-            subscriptionIdSemaphore.Wait();
-            uint newId = subscriptionId;
-            subscriptionId += 1;
-            // subscriptionIdSemaphore.Release();  // after return
-
-            WebSocketSubscriptionNeoGoCompatible subscription = new WebSocketSubscriptionNeoGoCompatible { subscriptionId = newId, webSocket = webSocket, method = methodName, @params = _params.Count > 1 ? (JObject)_params[1]! : new JObject() };
-            methodNameToSubscriptions[methodName].Add(subscription);
-            idToSubscriptions[newId] = subscription;
-            return newId;
+            WebSocketSubscriptionNeoGoCompatible subscription;
+            lock (subscriptionsLock)
+            {
+                if (!methodNameToSubscriptions.ContainsKey(methodName))
+                    throw new NotImplementedException(methodName);
+                uint newId = subscriptionId;
+                subscriptionId += 1;
+                subscription = new WebSocketSubscriptionNeoGoCompatible
+                {
+                    subscriptionId = newId,
+                    webSocket = webSocket,
+                    method = methodName,
+                    @params = _params.Count > 1 ? (JObject)_params[1]! : new JObject()
+                };
+                methodNameToSubscriptions[methodName].Add(subscription);
+            }
+            idToSubscriptions[subscription.subscriptionId] = subscription;
+            return subscription.subscriptionId;
         }
 
         [WebsocketNeoGoCompatibleMethod]
@@ -345,7 +395,10 @@ sendMessage:
                 if (!idToSubscriptions.ContainsKey(subscriptionId))
                     throw new ArgumentException($"{subscriptionId}");
                 idToSubscriptions.Remove(subscriptionId, out WebSocketSubscriptionNeoGoCompatible subscription);
-                methodNameToSubscriptions[subscription.method].Remove(subscription);
+                lock (subscriptionsLock)
+                {
+                    methodNameToSubscriptions[subscription.method].Remove(subscription);
+                }
             }
             return true;
         }

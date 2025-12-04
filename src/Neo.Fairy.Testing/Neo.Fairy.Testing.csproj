@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>Neo.Fairy.Testing</RootNamespace>
+    <AssemblyName>Neo.Fairy.Testing</AssemblyName>
+    <Version>1.0.0</Version>
+    <Authors>Neo Project</Authors>
+    <Description>Test framework for Neo Fairy - Foundry-style testing for Neo N3 smart contracts</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Neo.Fairy.Core\Neo.Fairy.Core.csproj" />
+    <ProjectReference Include="..\Neo.Fairy.Engine\Neo.Fairy.Engine.csproj" />
+  </ItemGroup>
+
+</Project>

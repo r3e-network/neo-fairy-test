@@ -186,7 +186,6 @@ namespace Neo.Plugins
                     switch (wsFuncNeoGoCompatible(webSocket, (JArray)@params))
                     {
                         case uint subscriptionId:
-                            subscriptionIdSemaphore.Release();
                             webSocketSubscriptions.AddLast(idToSubscriptions[subscriptionId]);
                             response["result"] = subscriptionId.ToString("x");
                             await webSocket.SendAsync(response.ToByteArray(false), WebSocketMessageType.Text, true, CancellationToken.None);
@@ -197,7 +196,8 @@ namespace Neo.Plugins
                             break;
                         default:
                             throw new NotSupportedException();
-                    };
+                    }
+                    ;
                 }
                 else if (webSocketMethods.TryGetValue(method, out var wsFunc))
                 {
@@ -222,7 +222,8 @@ namespace Neo.Plugins
                             break;
                         default:
                             throw new NotSupportedException();
-                    };
+                    }
+                    ;
                 }
                 else if (webSocketControlMethods.TryGetValue(method, out var controlFunc))
                 {
@@ -233,7 +234,8 @@ namespace Neo.Plugins
                             break;
                         default:
                             throw new NotSupportedException();
-                    };
+                    }
+                    ;
                 }
                 else if (FairyRpcMethods.TryGetValue(method, out var rpcFunc))
                 {

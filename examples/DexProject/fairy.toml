@@ -1,0 +1,51 @@
+# Neo Fairy Framework - DEX Example Project
+# This is a complete example showing how to build a DEX with Fairy
+
+[project]
+name = "neo-dex"
+version = "1.0.0"
+src = "src"
+test = "test"
+script = "script"
+out = "out"
+
+[compiler]
+path = "nccs"
+debug = true
+assembly = true
+optimize = false
+
+[fairy]
+rpc_url = "http://localhost:16868"
+network = "mainnet"
+gas_limit = 200
+session_timeout = 86400
+
+[deploy]
+default_wallet = "fairy.json"
+verify = true
+
+[test]
+verbosity = 2
+coverage = true
+parallel = true
+fail_fast = false
+fuzz_runs = 256
+
+# Contract definitions with dependencies
+[[contracts]]
+name = "FungibleToken"
+path = "src/FungibleToken.cs"
+alias = "token"
+
+[[contracts]]
+name = "LiquidityPool"
+path = "src/LiquidityPool.cs"
+alias = "pool"
+depends = ["token"]
+
+[[contracts]]
+name = "Router"
+path = "src/Router.cs"
+alias = "router"
+depends = ["token", "pool"]

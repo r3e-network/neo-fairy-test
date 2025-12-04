@@ -17,6 +17,7 @@ using Neo.Persistence;
 using Neo.SmartContract;
 using Neo.SmartContract.Native;
 using Neo.VM;
+using System.Collections.Concurrent;
 using System.Text;
 
 namespace Neo.Plugins
@@ -50,7 +51,7 @@ namespace Neo.Plugins
             string operation = _params[3]!.AsString();
             ContractParameter[] args = _params.Count >= 5 ? ((JArray)_params[4]!).Select(p => ContractParameter.FromJson((JObject)p!)).ToArray() : System.Array.Empty<ContractParameter>();
             Signer[]? signers = _params.Count >= 6 ? SignersFromJson((JArray)_params[5]!, system.Settings) : null;
-            Witness[]? witnesses = _params.Count >= 6 ? WitnessesFromJson((JArray)_params[5]!) : null;
+            Witness[]? witnesses = _params.Count >= 7 ? WitnessesFromJson((JArray)_params[6]!) : null;
 
             byte[] script;
             using (ScriptBuilder sb = new())
@@ -72,11 +73,11 @@ namespace Neo.Plugins
             FairySession testSession = GetOrCreateFairySession(session);
             FairyEngine newEngine;
             BreakReason breakReason = BreakReason.None;
-            logs.Clear();
-            newEngine = DebugRun(script, testSession.engine.SnapshotCache.CloneCache(), out breakReason, container: tx, settings: system.Settings, gas: settings.MaxGasInvoke, oldEngine: testSession.engine, logHandler: CacheLog);
+            ConcurrentQueue<LogEventArgs> logs = new();
+            newEngine = DebugRun(script, testSession.engine.SnapshotCache.CloneCache(), out breakReason, container: tx, settings: system.Settings, gas: settings.MaxGasInvoke, oldEngine: testSession.engine, logHandler: (engine, logEventArgs) => logs.Enqueue(logEventArgs));
             if (writeSnapshot)
                 testSession.debugEngine = newEngine;
-            return DumpDebugResultJson(newEngine, breakReason);
+            return DumpDebugResultJson(newEngine, breakReason, logs);
         }
 
         [FairyRpcMethod]
@@ -95,12 +96,12 @@ namespace Neo.Plugins
             };
             FairySession testSession = GetOrCreateFairySession(session);
             FairyEngine newEngine;
-            logs.Clear();
             BreakReason breakReason = BreakReason.None;
-            newEngine = DebugRun(script, testSession.engine.SnapshotCache.CloneCache(), out breakReason, container: tx, settings: system.Settings, gas: settings.MaxGasInvoke, oldEngine: testSession.engine, logHandler: CacheLog);
+            ConcurrentQueue<LogEventArgs> logs = new();
+            newEngine = DebugRun(script, testSession.engine.SnapshotCache.CloneCache(), out breakReason, container: tx, settings: system.Settings, gas: settings.MaxGasInvoke, oldEngine: testSession.engine, logHandler: (engine, logEventArgs) => logs.Enqueue(logEventArgs));
             if (writeSnapshot)
                 testSession.debugEngine = newEngine;
-            return DumpDebugResultJson(newEngine, breakReason);
+            return DumpDebugResultJson(newEngine, breakReason, logs);
         }
 
         [FairyRpcMethod]
@@ -109,11 +110,12 @@ namespace Neo.Plugins
             string session = _params[0]!.AsString();
             FairyEngine newEngine = GetDebugEngineOrThrow(session);
             BreakReason breakReason = BreakReason.None;
-            logs.Clear();
-            newEngine.Log += CacheLog;
+            ConcurrentQueue<LogEventArgs> logs = new();
+            ApplicationEngine.OnLogEvent handler = (engine, logEventArgs) => logs.Enqueue(logEventArgs);
+            newEngine.Log += handler;
             Execute(newEngine, out breakReason);
-            newEngine.Log -= CacheLog;
-            return DumpDebugResultJson(newEngine, breakReason);
+            newEngine.Log -= handler;
+            return DumpDebugResultJson(newEngine, breakReason, logs);
         }
 
         private void GetSourceCode(JObject json, UInt160? scripthash, uint? instructionPointer)
@@ -135,7 +137,7 @@ namespace Neo.Plugins
             }
         }
 
-        private JObject DumpDebugResultJson(JObject json, FairyEngine newEngine, BreakReason breakReason)
+        private JObject DumpDebugResultJson(JObject json, FairyEngine newEngine, BreakReason breakReason, ConcurrentQueue<LogEventArgs> logs)
         {
             json["state"] = newEngine.State;
             json["breakreason"] = breakReason;
@@ -187,9 +189,9 @@ namespace Neo.Plugins
             return json;
         }
 
-        private JObject DumpDebugResultJson(FairyEngine newEngine, BreakReason breakReason)
+        private JObject DumpDebugResultJson(FairyEngine newEngine, BreakReason breakReason, ConcurrentQueue<LogEventArgs> logs)
         {
-            return DumpDebugResultJson(new JObject(), newEngine, breakReason);
+            return DumpDebugResultJson(new JObject(), newEngine, breakReason, logs);
         }
 
         private FairyEngine DebugRun(ReadOnlyMemory<byte> script, DataCache snapshot, out BreakReason breakReason, IVerifiable? container = null, Block? persistingBlock = null, ProtocolSettings? settings = null, int offset = 0, long gas = FairyEngine.TestModeGas, IDiagnostic? diagnostic = null, FairyEngine? oldEngine = null, ApplicationEngine.OnLogEvent? logHandler = null)
@@ -423,11 +425,12 @@ namespace Neo.Plugins
             string session = _params[0]!.AsString();
             FairyEngine newEngine = GetDebugEngineOrThrow(session);
             BreakReason breakReason = BreakReason.None;
-            logs.Clear();
-            newEngine.Log += CacheLog;
+            ConcurrentQueue<LogEventArgs> logs = new();
+            ApplicationEngine.OnLogEvent handler = (engine, logEventArgs) => logs.Enqueue(logEventArgs);
+            newEngine.Log += handler;
             StepInto(newEngine, out breakReason);
-            newEngine.Log -= CacheLog;
-            return DumpDebugResultJson(newEngine, breakReason);
+            newEngine.Log -= handler;
+            return DumpDebugResultJson(newEngine, breakReason, logs);
         }
 
         private FairyEngine StepOut(FairyEngine engine, out BreakReason breakReason)
@@ -461,11 +464,12 @@ namespace Neo.Plugins
             string session = _params[0]!.AsString();
             FairyEngine newEngine = GetDebugEngineOrThrow(session);
             BreakReason breakReason = BreakReason.None;
-            logs.Clear();
-            newEngine.Log += CacheLog;
+            ConcurrentQueue<LogEventArgs> logs = new();
+            ApplicationEngine.OnLogEvent handler = (engine, logEventArgs) => logs.Enqueue(logEventArgs);
+            newEngine.Log += handler;
             StepOut(newEngine, out breakReason);
-            newEngine.Log -= CacheLog;
-            return DumpDebugResultJson(newEngine, breakReason);
+            newEngine.Log -= handler;
+            return DumpDebugResultJson(newEngine, breakReason, logs);
         }
 
         private FairyEngine StepOverSourceCode(FairyEngine engine, out BreakReason breakReason)
@@ -501,11 +505,12 @@ namespace Neo.Plugins
             string session = _params[0]!.AsString();
             FairyEngine newEngine = GetDebugEngineOrThrow(session);
             BreakReason breakReason = BreakReason.None;
-            logs.Clear();
-            newEngine.Log += CacheLog;
+            ConcurrentQueue<LogEventArgs> logs = new();
+            ApplicationEngine.OnLogEvent handler = (engine, logEventArgs) => logs.Enqueue(logEventArgs);
+            newEngine.Log += handler;
             StepOverSourceCode(newEngine, out breakReason);
-            newEngine.Log -= CacheLog;
-            return DumpDebugResultJson(newEngine, breakReason);
+            newEngine.Log -= handler;
+            return DumpDebugResultJson(newEngine, breakReason, logs);
         }
 
         [FairyRpcMethod]
@@ -513,12 +518,12 @@ namespace Neo.Plugins
         {
             string session = _params[0]!.AsString();
             FairyEngine newEngine = GetDebugEngineOrThrow(session);
-            BreakReason breakReason = BreakReason.None;
-            logs.Clear();
-            newEngine.Log += CacheLog;
-            ExecuteAndCheck(newEngine, out breakReason);
-            newEngine.Log -= CacheLog;
-            return DumpDebugResultJson(newEngine, BreakReason.None);
+            ConcurrentQueue<LogEventArgs> logs = new();
+            ApplicationEngine.OnLogEvent handler = (engine, logEventArgs) => logs.Enqueue(logEventArgs);
+            newEngine.Log += handler;
+            ExecuteAndCheck(newEngine, out _);
+            newEngine.Log -= handler;
+            return DumpDebugResultJson(newEngine, BreakReason.None, logs);
         }
 
         [FairyRpcMethod]

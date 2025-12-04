@@ -1,3 +1,7 @@
-/.vs/*
-/bin/*
-/obj/*
+/.vs/
+**/bin/
+**/obj/
+examples/**/out/
+/.claude-flow/
+/.hive-mind/
+TestResult*

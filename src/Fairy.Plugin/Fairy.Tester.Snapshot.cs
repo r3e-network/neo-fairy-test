@@ -14,7 +14,7 @@ using System.Collections.Concurrent;
 
 namespace Neo.Plugins
 {
-    #pragma warning disable CS8601
+#pragma warning disable CS8601
     public partial class Fairy
     {
         public readonly ConcurrentDictionary<string, FairySession> sessionStringToFairySession = new();

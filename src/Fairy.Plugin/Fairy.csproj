@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>net10.0</TargetFrameworks>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <!-- Prevent the default recursive Compile glob from pulling in src/tests/examples -->
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+
+  <!-- Prefer the layout used in the merged neo repo relative to repo root -->
+  <ItemGroup Condition="Exists('$(NeoRoot)/src/Neo.ConsoleService/Neo.ConsoleService.csproj')">
+    <ProjectReference Include="$(NeoRoot)/src/Neo.ConsoleService/Neo.ConsoleService.csproj" />
+    <ProjectReference Include="$(NeoRoot)/src/Neo.Json/Neo.Json.csproj" />
+    <ProjectReference Include="$(NeoRoot)/src/Plugins/RpcServer/RpcServer.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="*.cs" />
+    <None Update="fairy.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </None>
+    <None Update="RpcServer.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </None>
+  </ItemGroup>
+
+</Project>

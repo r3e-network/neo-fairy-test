@@ -26,8 +26,6 @@ namespace Neo.Plugins
 {
     public partial class Fairy
     {
-        readonly ConcurrentQueue<LogEventArgs> logs = new();
-
         public UInt160 neoScriptHash = UInt160.Parse("0xef4073a0f2b305a38ec4050e4d3d28bc40ea63f5");
         public UInt160 gasScriptHash = UInt160.Parse("0xd2a4cff31913016155e38e474a2c06d08be276cf");
         const byte Native_Prefix_Account = 20;
@@ -85,11 +83,6 @@ namespace Neo.Plugins
             return GetInvokeResultWithSession(session, writeSnapshot, script, signers, witnesses);
         }
 
-        private void CacheLog(ApplicationEngine engine, LogEventArgs logEventArgs)
-        {
-            logs.Enqueue(logEventArgs);
-        }
-
         private JObject GetInvokeResultWithSession(string session, bool writeSnapshot, byte[] script, Signer[]? signers = null, Witness[]? witnesses = null)
         {
             FairySession testSession = GetOrCreateFairySession(session);
@@ -113,8 +106,8 @@ namespace Neo.Plugins
             FairySession testSession = GetOrCreateFairySession(session);
             FairyEngine oldEngine = testSession.engine;
             FairyEngine newEngine;
-            logs.Clear();
-            newEngine = FairyEngine.Run(script, oldEngine.SnapshotCache.CloneCache(), this, container: tx, settings: system.Settings, gas: settings.MaxGasInvoke, oldEngine: oldEngine, logHandler: CacheLog);
+            ConcurrentQueue<LogEventArgs> logs = new();
+            newEngine = FairyEngine.Run(script, oldEngine.SnapshotCache.CloneCache(), this, container: tx, settings: system.Settings, gas: settings.MaxGasInvoke, oldEngine: oldEngine, logHandler: (engine, logEventArgs) => logs.Enqueue(logEventArgs));
             if (writeSnapshot && newEngine.State == VMState.HALT)
                 testSession.engine = newEngine;
 
@@ -179,6 +172,9 @@ namespace Neo.Plugins
                 {
                     UInt160 contextScriptHash = context.GetScriptHash();
                     string? contextContractName = NativeContract.ContractManagement.GetContract(newEngine.SnapshotCache, contextScriptHash)?.Manifest?.Name;
+                    string workspaceAlias = string.Empty;
+                    if (TryGetWorkspaceAlias(contextScriptHash, out var wsName, out var alias))
+                        workspaceAlias = $" {alias}@{wsName}";
                     //try
                     {
                         if (contractScriptHashToAllInstructionPointerToSourceLineNum.ContainsKey(contextScriptHash) && contractScriptHashToAllInstructionPointerToSourceLineNum[contextScriptHash].ContainsKey((uint)context.InstructionPointer))
@@ -190,7 +186,7 @@ namespace Neo.Plugins
                         }
                     }
                     //catch (Exception _) {; }
-                    traceback.Append($"\r\n\tInstructionPointer={context.InstructionPointer}, OpCode {context.CurrentInstruction?.OpCode}, Script Length={context.Script.Length} {contextScriptHash}[{contextContractName}]");
+                    traceback.Append($"\r\n\tInstructionPointer={context.InstructionPointer}, OpCode {context.CurrentInstruction?.OpCode}, Script Length={context.Script.Length} {contextScriptHash}[{contextContractName}]{workspaceAlias}");
                 }
                 traceback.Append($"\r\n{json["exception"]!.GetString()}");
 

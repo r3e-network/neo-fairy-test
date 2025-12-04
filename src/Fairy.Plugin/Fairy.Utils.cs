@@ -31,50 +31,119 @@ namespace Neo.Plugins
 {
     public partial class Fairy
     {
+        private readonly record struct VirtualDeployResult(UInt160 ContractHash, long NetworkFee, long GasConsumed, VMState State, string? Exception);
+
+        private readonly record struct RelayDeployResult(UInt160 ContractHash, Transaction Transaction, long NetworkFee, long SystemFee, ContractParametersContext? Context);
+
         private ContractState RequireContract(DataCache snapshot, UInt160 hash)
         {
             return NativeContract.ContractManagement.GetContract(snapshot, hash) ?? throw new ArgumentException($"Contract {hash} not found.");
         }
 
+        private static byte[] BuildDeployScript(NefFile nef, ContractManifest manifest, ContractParameter? data)
+        {
+            using ScriptBuilder sb = new();
+            string manifestJson = manifest.ToJson().ToString();
+            if (data != null)
+                sb.EmitDynamicCall(NativeContract.ContractManagement.Hash, "deploy", nef.ToArray(), manifestJson, data);
+            else
+                sb.EmitDynamicCall(NativeContract.ContractManagement.Hash, "deploy", nef.ToArray(), manifestJson);
+            return sb.ToArray();
+        }
+
+        internal static Signer CloneSigner(Signer signer)
+        {
+            return new Signer
+            {
+                Account = signer.Account,
+                Scopes = signer.Scopes,
+                AllowedContracts = signer.AllowedContracts?.ToArray(),
+                AllowedGroups = signer.AllowedGroups?.ToArray(),
+                Rules = signer.Rules?.Select(r => WitnessRule.FromJson((JObject)r.ToJson())!).ToArray(),
+            };
+        }
+
+        internal static Signer[] CloneSigners(Signer[]? signers)
+        {
+            if (signers == null || signers.Length == 0) return System.Array.Empty<Signer>();
+            return signers.Select(CloneSigner).ToArray();
+        }
+
+        private Signer[] PrepareDeploySigners(Signer[]? signers, Wallet wallet)
+        {
+            Signer[] normalized = CloneSigners(signers);
+            if (normalized.Length > 0)
+                return normalized;
+            return new[]
+            {
+                new Signer
+                {
+                    Account = wallet.GetAccounts().First().ScriptHash,
+                    Scopes = WitnessScope.CalledByEntry
+                }
+            };
+        }
+
+        private VirtualDeployResult ExecuteVirtualDeploy(FairySession testSession, string session, NefFile nef, ContractManifest manifest, ContractParameter? data, Signer[] signers, Wallet wallet)
+        {
+            byte[] script = BuildDeployScript(nef, manifest, data);
+            Block dummyBlock = CreateDummyBlockWithTimestamp(testSession.engine.SnapshotCache, system.Settings, timestamp: testSession.engine.runtimeArgs.timestamp);
+            UInt160 sender = signers.Length > 0 ? signers[0].Account : wallet.GetAccounts().First().ScriptHash;
+            Transaction tx = wallet.MakeTransaction(testSession.engine.SnapshotCache, script, sender: sender, signers, persistingBlock: dummyBlock);
+            UInt160 hash = SmartContract.Helper.GetContractHash(tx.Sender, nef.CheckSum, manifest.Name);
+            FairyEngine newEngine = FairyEngine.Run(script, testSession.engine.SnapshotCache.CloneCache(), this, persistingBlock: dummyBlock, container: tx, settings: system.Settings, gas: settings.MaxGasInvoke, oldEngine: testSession.engine);
+            testSession.engine = newEngine;
+            return new VirtualDeployResult(hash, tx.NetworkFee, newEngine.FeeConsumed, newEngine.State, GetExceptionMessage(newEngine.FaultException));
+        }
+
+        private RelayDeployResult ExecuteRelayDeploy(NefFile nef, ContractManifest manifest, ContractParameter? data, Signer[] signers, Wallet wallet)
+        {
+            byte[] script = BuildDeployScript(nef, manifest, data);
+            DataCache snapshot = system.GetSnapshotCache();
+            Transaction tx = wallet.MakeTransaction(snapshot, script, sender: signers[0].Account, signers, maxGas: settings.MaxGasInvoke);
+
+            ContractParametersContext context = new(snapshot, tx, system.Settings.Network);
+            wallet.Sign(context);
+            if (context.Completed)
+                tx.Witnesses = context.GetWitnesses();
+
+            system.Blockchain.Tell(tx, ActorRefs.NoSender);
+
+            UInt160 hash = SmartContract.Helper.GetContractHash(tx.Sender, nef.CheckSum, manifest.Name);
+            return new RelayDeployResult(hash, tx, tx.NetworkFee, tx.SystemFee, context.Completed ? null : context);
+        }
+
         [FairyRpcMethod]
         protected virtual JObject VirtualDeploy(JArray _params)
         {
-            if (defaultFairyWallet == null)
-                throw new Exception("Please open a wallet before deploying a contract.");
             string session = _params[0]!.AsString();
             NefFile nef = Convert.FromBase64String(_params[1]!.AsString()).AsSerializable<NefFile>();
             ContractManifest manifest = ContractManifest.Parse(_params[2]!.AsString());
             ContractParameter? data = null;
-            Signer[] signers;
+            Signer[]? signers = null;
             var param3 = _params[3]! as JObject;
+            int signerIndex = 3;
             if (param3 != null)  // A contract parameter
             {
                 data = ContractParameter.FromJson(param3);
-                signers = SignersFromJson((JArray)_params[4]!, system.Settings);
+                signerIndex = 4;
             }
-            else
-                signers = SignersFromJson((JArray)_params[3]!, system.Settings);
+            if (_params.Count > signerIndex)
+                signers = SignersFromJson((JArray)_params[signerIndex]!, system.Settings);
+
             FairySession testSession = GetOrCreateFairySession(session);
-            DataCache snapshot = testSession.engine.SnapshotCache;
-            byte[] script;
-            using (ScriptBuilder sb = new ScriptBuilder())
-            {
-                if (data != null)
-                    sb.EmitDynamicCall(NativeContract.ContractManagement.Hash, "deploy", nef.ToArray(), manifest.ToJson().ToString(), data);
-                else
-                    sb.EmitDynamicCall(NativeContract.ContractManagement.Hash, "deploy", nef.ToArray(), manifest.ToJson().ToString());
-                script = sb.ToArray();
-            }
+            Wallet wallet = GetSigningWallet(testSession);
+            Signer[] normalizedSigners = PrepareDeploySigners(signers, wallet);
             JObject json = new();
             try
             {
-                Block dummyBlock = CreateDummyBlockWithTimestamp(testSession.engine.SnapshotCache, system.Settings, timestamp: testSession.engine.runtimeArgs.timestamp);
-                Transaction tx = defaultFairyWallet.MakeTransaction(testSession.engine.SnapshotCache, script, sender: signers.Length > 0 ? signers[0].Account : defaultFairyWallet.GetAccounts().First().ScriptHash, persistingBlock: dummyBlock);
-                json["networkfee"] = tx.NetworkFee.ToString();
-                UInt160 hash = SmartContract.Helper.GetContractHash(tx.Sender, nef.CheckSum, manifest.Name);
-                testSession.engine = FairyEngine.Run(script, snapshot.CloneCache(), this, persistingBlock: dummyBlock, container: tx, settings: system.Settings, gas: settings.MaxGasInvoke, oldEngine: testSession.engine);
-                json["gasconsumed"] = testSession.engine.FeeConsumed.ToString();
-                json[session] = hash.ToString();
+                VirtualDeployResult result = ExecuteVirtualDeploy(testSession, session, nef, manifest, data, normalizedSigners, wallet);
+                json["networkfee"] = result.NetworkFee.ToString();
+                json["gasconsumed"] = result.GasConsumed.ToString();
+                json["state"] = result.State.ToString();
+                if (result.Exception != null)
+                    json["exception"] = result.Exception;
+                json[session] = result.ContractHash.ToString();
             }
             catch (InvalidOperationException ex)
             {
@@ -457,7 +526,7 @@ namespace Neo.Plugins
             return json;
         }
 
-        protected static Signer[] SignersFromJson(JArray _params, ProtocolSettings settings)
+        internal static Signer[] SignersFromJson(JArray _params, ProtocolSettings settings)
         {
             var ret = _params.Select(u => new Signer
             {
@@ -506,7 +575,7 @@ namespace Neo.Plugins
         private Wallet GetSigningWallet(FairySession? session = null)
         {
             Wallet? wallet = session?.engine.runtimeArgs.fairyWallet ?? defaultFairyWallet;
-            return wallet ?? throw new InvalidOperationException("No wallet available. Open a wallet or set a session wallet before relaying.");
+            return wallet ?? throw new InvalidOperationException("No wallet available. Open a wallet or set a session wallet before deploying or relaying.");
         }
 
         [FairyRpcMethod]
@@ -528,46 +597,19 @@ namespace Neo.Plugins
                 signerIndex = 4;
             }
 
-            Signer[] signers = _params.Count > signerIndex ? SignersFromJson((JArray)_params[signerIndex]!, system.Settings) : System.Array.Empty<Signer>();
-            if (signers.Length == 0)
-            {
-                signers = new[]
-                {
-                    new Signer
-                    {
-                        Account = wallet.GetAccounts().First().ScriptHash,
-                        Scopes = WitnessScope.CalledByEntry
-                    }
-                };
-            }
+            Signer[]? signers = _params.Count > signerIndex ? SignersFromJson((JArray)_params[signerIndex]!, system.Settings) : null;
+            Signer[] normalizedSigners = PrepareDeploySigners(signers, wallet);
 
-            byte[] script;
-            using (ScriptBuilder sb = new())
-            {
-                if (data != null)
-                    sb.EmitDynamicCall(NativeContract.ContractManagement.Hash, "deploy", nef.ToArray(), manifest.ToJson().ToString(), data);
-                else
-                    sb.EmitDynamicCall(NativeContract.ContractManagement.Hash, "deploy", nef.ToArray(), manifest.ToJson().ToString());
-                script = sb.ToArray();
-            }
+            RelayDeployResult result = ExecuteRelayDeploy(nef, manifest, data, normalizedSigners, wallet);
 
-            DataCache snapshot = system.GetSnapshotCache();
-            Transaction tx = wallet.MakeTransaction(snapshot, script, sender: signers[0].Account, signers, maxGas: settings.MaxGasInvoke);
-
-            ContractParametersContext context = new(snapshot, tx, system.Settings.Network);
-            wallet.Sign(context);
-            if (context.Completed)
-                tx.Witnesses = context.GetWitnesses();
-
-            system.Blockchain.Tell(tx, ActorRefs.NoSender);
-
-            JObject json = tx.ToJson(system.Settings);
-            json["tx"] = Convert.ToBase64String(tx.ToArray());
-            json["hash"] = tx.Hash.ToString();
-            json["networkfee"] = tx.NetworkFee;
-            json["sysfee"] = tx.SystemFee;
-            if (!context.Completed)
-                json["pendingsignature"] = context.ToJson();
+            JObject json = result.Transaction.ToJson(system.Settings);
+            json["tx"] = Convert.ToBase64String(result.Transaction.ToArray());
+            json["hash"] = result.Transaction.Hash.ToString();
+            json["contracthash"] = result.ContractHash.ToString();
+            json["networkfee"] = result.NetworkFee;
+            json["sysfee"] = result.SystemFee;
+            if (result.Context != null)
+                json["pendingsignature"] = result.Context.ToJson();
             return json;
         }
 
