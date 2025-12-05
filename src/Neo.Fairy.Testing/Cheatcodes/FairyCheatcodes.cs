@@ -93,25 +93,68 @@ public sealed class FairyCheatcodes : ICheatcodes
 
     #region Time Manipulation
 
-    /// <inheritdoc/>
+    /// <summary>
+    /// Sets the block timestamp to a specific value.
+    /// </summary>
+    /// <param name="timestamp">The timestamp in milliseconds since Unix epoch.</param>
+    /// <remarks>
+    /// Neo N3 uses millisecond timestamps. To convert from seconds:
+    /// <code>Vm.Warp(secondsTimestamp * 1000)</code>
+    /// </remarks>
     public void Warp(ulong timestamp)
     {
         _session.Timestamp = timestamp;
     }
 
-    /// <inheritdoc/>
+    /// <summary>
+    /// Skips forward in time by the specified number of seconds.
+    /// </summary>
+    /// <param name="seconds">Number of seconds to skip forward.</param>
+    /// <remarks>
+    /// This method accepts seconds for convenience but internally converts to milliseconds
+    /// since Neo N3 uses millisecond timestamps.
+    /// </remarks>
     public void Skip(ulong seconds)
     {
         var current = _session.Timestamp ?? (ulong)DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-        _session.Timestamp = current + (seconds * 1000); // Convert to milliseconds
+        _session.Timestamp = current + (seconds * 1000); // Convert seconds to milliseconds
     }
 
-    /// <inheritdoc/>
+    /// <summary>
+    /// Skips forward in time by the specified number of milliseconds.
+    /// Use this for precise time manipulation.
+    /// </summary>
+    /// <param name="milliseconds">Number of milliseconds to skip forward.</param>
+    public void SkipMs(ulong milliseconds)
+    {
+        var current = _session.Timestamp ?? (ulong)DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        _session.Timestamp = current + milliseconds;
+    }
+
+    /// <summary>
+    /// Rewinds time by the specified number of seconds.
+    /// </summary>
+    /// <param name="seconds">Number of seconds to rewind.</param>
+    /// <remarks>
+    /// This method accepts seconds for convenience but internally converts to milliseconds
+    /// since Neo N3 uses millisecond timestamps.
+    /// </remarks>
     public void Rewind(ulong seconds)
     {
         var current = _session.Timestamp ?? (ulong)DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         var rewindMs = seconds * 1000;
         _session.Timestamp = current > rewindMs ? current - rewindMs : 0;
+    }
+
+    /// <summary>
+    /// Rewinds time by the specified number of milliseconds.
+    /// Use this for precise time manipulation.
+    /// </summary>
+    /// <param name="milliseconds">Number of milliseconds to rewind.</param>
+    public void RewindMs(ulong milliseconds)
+    {
+        var current = _session.Timestamp ?? (ulong)DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        _session.Timestamp = current > milliseconds ? current - milliseconds : 0;
     }
 
     #endregion

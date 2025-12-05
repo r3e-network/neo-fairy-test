@@ -217,6 +217,9 @@ public abstract class FairyTest : IDisposable, IContractInvoker
     /// <typeparam name="T">The generated contract wrapper type.</typeparam>
     /// <param name="alias">The contract alias.</param>
     /// <returns>A typed contract wrapper instance.</returns>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when the contract is not deployed or the type doesn't have the required constructor.
+    /// </exception>
     /// <example>
     /// <code>
     /// var counter = Bind&lt;Counter&gt;("counter");
@@ -227,7 +230,26 @@ public abstract class FairyTest : IDisposable, IContractInvoker
     protected T Bind<T>(string alias) where T : class
     {
         var contractHash = GetContract(alias);
-        return (T)Activator.CreateInstance(typeof(T), this, contractHash)!;
+
+        // Validate that T has the required constructor (IContractInvoker, string)
+        var constructor = typeof(T).GetConstructor(new[] { typeof(IContractInvoker), typeof(string) });
+        if (constructor == null)
+        {
+            throw new InvalidOperationException(
+                $"Type '{typeof(T).Name}' must have a public constructor with signature " +
+                $"(IContractInvoker invoker, string contractHash). " +
+                $"Ensure you are using a generated contract wrapper class.");
+        }
+
+        try
+        {
+            return (T)constructor.Invoke(new object[] { this, contractHash });
+        }
+        catch (Exception ex)
+        {
+            throw new InvalidOperationException(
+                $"Failed to create instance of '{typeof(T).Name}': {ex.Message}", ex);
+        }
     }
 
     /// <summary>
@@ -271,13 +293,25 @@ public abstract class FairyTest : IDisposable, IContractInvoker
 
         // Try to load contract from project configuration
         FairyProject? project = null;
+        Exception? loadException = null;
+
         try
         {
             project = FairyProject.Load();
         }
-        catch
+        catch (FileNotFoundException)
         {
-            // Project config not available, alias must be a file path
+            // fairy.toml not found - this is expected in some scenarios
+        }
+        catch (DirectoryNotFoundException)
+        {
+            // Project directory not found - this is expected in some scenarios
+        }
+        catch (Exception ex)
+        {
+            // Log other errors for debugging but continue
+            loadException = ex;
+            Log($"Warning: Failed to load fairy.toml: {ex.Message}");
         }
 
         if (project != null)
@@ -285,12 +319,23 @@ public abstract class FairyTest : IDisposable, IContractInvoker
             var contractConfig = project.GetContractByAlias(alias);
             if (contractConfig != null)
             {
+                if (!contractConfig.IsCompiled)
+                {
+                    throw new InvalidOperationException(
+                        $"Contract '{alias}' is not compiled. Run 'fairy build' first. " +
+                        $"Expected NEF at: {contractConfig.NefPath}");
+                }
                 return DeployFromFilesInternal(contractConfig.NefPath, contractConfig.ManifestPath);
             }
         }
 
-        throw new InvalidOperationException(
-            $"Contract '{alias}' not found. Either configure it in fairy.toml or use DeployFromFiles() with explicit paths.");
+        var errorMessage = $"Contract '{alias}' not found. Either configure it in fairy.toml or use DeployFromFiles() with explicit paths.";
+        if (loadException != null)
+        {
+            errorMessage += $" (fairy.toml load error: {loadException.Message})";
+        }
+
+        throw new InvalidOperationException(errorMessage);
     }
 
     private string DeployFromFilesInternal(string nefPath, string manifestPath)

@@ -79,7 +79,7 @@ public sealed class ContractInterfaceGenerator
         foreach (var method in manifest.Abi.Methods.Where(m => !m.IsInternal))
         {
             var returnType = MapReturnType(method.ReturnType);
-            var methodName = ToPascalCase(method.Name);
+            var methodName = ToSafeMethodName(method.Name);
             var parameters = GenerateParameters(method.Parameters);
 
             sb.AppendLine($"    /// <summary>");
@@ -148,7 +148,7 @@ public sealed class ContractInterfaceGenerator
     private void GenerateMethod(StringBuilder sb, ContractMethod method)
     {
         var returnType = MapReturnType(method.ReturnType);
-        var methodName = ToPascalCase(method.Name);
+        var methodName = ToSafeMethodName(method.Name);
         var parameters = GenerateParameters(method.Parameters);
         var argsList = GenerateArgumentsList(method.Parameters);
 
@@ -158,7 +158,7 @@ public sealed class ContractInterfaceGenerator
 
         foreach (var param in method.Parameters)
         {
-            sb.AppendLine($"    /// <param name=\"{ToCamelCase(param.Name)}\">{param.Name} parameter.</param>");
+            sb.AppendLine($"    /// <param name=\"{ToSafeParameterName(param.Name)}\">{param.Name} parameter.</param>");
         }
 
         if (method.ReturnType != ContractParameterType.Void)
@@ -224,14 +224,14 @@ public sealed class ContractInterfaceGenerator
         if (parameters.Count == 0) return "";
 
         return string.Join(", ", parameters.Select(p =>
-            $"{MapPropertyType(p.Type)} {ToCamelCase(p.Name)}"));
+            $"{MapPropertyType(p.Type)} {ToSafeParameterName(p.Name)}"));
     }
 
     private string GenerateArgumentsList(List<ContractParameter> parameters)
     {
         if (parameters.Count == 0) return "";
 
-        var args = string.Join(", ", parameters.Select(p => ToCamelCase(p.Name)));
+        var args = string.Join(", ", parameters.Select(p => ToSafeParameterName(p.Name)));
         return $", {args}";
     }
 
@@ -287,6 +287,21 @@ public sealed class ContractInterfaceGenerator
         };
     }
 
+    // C# reserved keywords that need escaping with @
+    private static readonly HashSet<string> CSharpKeywords = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "abstract", "as", "base", "bool", "break", "byte", "case", "catch", "char",
+        "checked", "class", "const", "continue", "decimal", "default", "delegate",
+        "do", "double", "else", "enum", "event", "explicit", "extern", "false",
+        "finally", "fixed", "float", "for", "foreach", "goto", "if", "implicit",
+        "in", "int", "interface", "internal", "is", "lock", "long", "namespace",
+        "new", "null", "object", "operator", "out", "override", "params", "private",
+        "protected", "public", "readonly", "ref", "return", "sbyte", "sealed",
+        "short", "sizeof", "stackalloc", "static", "string", "struct", "switch",
+        "this", "throw", "true", "try", "typeof", "uint", "ulong", "unchecked",
+        "unsafe", "ushort", "using", "virtual", "void", "volatile", "while"
+    };
+
     private static string ToPascalCase(string name)
     {
         if (string.IsNullOrEmpty(name)) return name;
@@ -321,6 +336,24 @@ public sealed class ContractInterfaceGenerator
         var pascal = ToPascalCase(name);
         if (string.IsNullOrEmpty(pascal)) return pascal;
         return char.ToLowerInvariant(pascal[0]) + pascal[1..];
+    }
+
+    /// <summary>
+    /// Converts a name to a safe C# method name, escaping keywords with @.
+    /// </summary>
+    private static string ToSafeMethodName(string name)
+    {
+        var pascal = ToPascalCase(name);
+        return CSharpKeywords.Contains(pascal) ? $"@{pascal}" : pascal;
+    }
+
+    /// <summary>
+    /// Converts a name to a safe C# parameter name, escaping keywords with @.
+    /// </summary>
+    private static string ToSafeParameterName(string name)
+    {
+        var camel = ToCamelCase(name);
+        return CSharpKeywords.Contains(camel) ? $"@{camel}" : camel;
     }
 }
 

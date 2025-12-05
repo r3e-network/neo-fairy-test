@@ -62,14 +62,41 @@ public sealed class TestRunner
         var allResults = new List<TestResult>();
         var stopwatch = Stopwatch.StartNew();
 
-        foreach (var testClass in testClasses)
+        if (_options.Parallel && !_options.FailFast && testClasses.Count > 1)
         {
-            var classResults = await RunSingleTestClassAsync(testClass, methodFilter);
-            allResults.AddRange(classResults);
-
-            if (_options.FailFast && classResults.Any(r => r.Failed))
+            // Run test classes in parallel
+            var semaphore = new SemaphoreSlim(_options.MaxParallelism);
+            var tasks = testClasses.Select(async testClass =>
             {
-                break;
+                await semaphore.WaitAsync();
+                try
+                {
+                    return await RunSingleTestClassAsync(testClass, methodFilter);
+                }
+                finally
+                {
+                    semaphore.Release();
+                }
+            });
+
+            var results = await Task.WhenAll(tasks);
+            foreach (var classResults in results)
+            {
+                allResults.AddRange(classResults);
+            }
+        }
+        else
+        {
+            // Run test classes sequentially
+            foreach (var testClass in testClasses)
+            {
+                var classResults = await RunSingleTestClassAsync(testClass, methodFilter);
+                allResults.AddRange(classResults);
+
+                if (_options.FailFast && classResults.Any(r => r.Failed))
+                {
+                    break;
+                }
             }
         }
 
@@ -402,6 +429,18 @@ public sealed class TestRunnerOptions
     /// Whether to collect code coverage.
     /// </summary>
     public bool CollectCoverage { get; set; }
+
+    /// <summary>
+    /// Whether to run test classes in parallel.
+    /// Note: Tests within a class are always run sequentially.
+    /// </summary>
+    public bool Parallel { get; set; }
+
+    /// <summary>
+    /// Maximum degree of parallelism when Parallel is enabled.
+    /// Defaults to the number of processors.
+    /// </summary>
+    public int MaxParallelism { get; set; } = Environment.ProcessorCount;
 }
 
 // Placeholder for uint96 type used in fuzz tests
