@@ -157,7 +157,10 @@ namespace Neo.Plugins
             {
                 WebSocketReceiveResult wsResult = await webSocket.ReceiveAsync(new ArraySegment<byte>(buffer), CancellationToken.None);//ToDo built in CancellationToken
                 if (wsResult.MessageType == WebSocketMessageType.Close)
+                {
                     await webSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, null, CancellationToken.None);
+                    break;
+                }
 
                 JToken request;
                 using (MemoryStream stream = new MemoryStream())  // MemoryStream has an internal capacity limit 2147483591 < 2**31

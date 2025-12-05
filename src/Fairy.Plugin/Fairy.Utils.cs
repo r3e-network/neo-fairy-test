@@ -572,10 +572,10 @@ namespace Neo.Plugins
                 return null;
         }
 
-        private Wallet GetSigningWallet(FairySession? session = null)
+        private Wallet GetSigningWallet(FairySession? session = null, bool allowDefaultWallet = true)
         {
-            Wallet? wallet = session?.engine.runtimeArgs.fairyWallet ?? defaultFairyWallet;
-            return wallet ?? throw new InvalidOperationException("No wallet available. Open a wallet or set a session wallet before deploying or relaying.");
+            Wallet? wallet = session?.engine.runtimeArgs.fairyWallet ?? (allowDefaultWallet ? defaultFairyWallet : null);
+            return wallet ?? throw new InvalidOperationException("No wallet available. Set a session wallet before signing or relaying transactions.");
         }
 
         [FairyRpcMethod]
@@ -584,7 +584,7 @@ namespace Neo.Plugins
             // params: [session|null, nefBase64, manifestJsonString, data? (ContractParameter or null), signers?]
             string? sessionName = _params[0]?.AsString();
             FairySession? session = sessionName == null ? null : GetOrCreateFairySession(sessionName);
-            Wallet wallet = GetSigningWallet(session);
+            Wallet wallet = GetSigningWallet(session, allowDefaultWallet: false);
 
             NefFile nef = Convert.FromBase64String(_params[1]!.AsString()).AsSerializable<NefFile>();
             ContractManifest manifest = ContractManifest.Parse(_params[2]!.AsString());
@@ -619,7 +619,7 @@ namespace Neo.Plugins
             // params: [session|null, scripthash, operation, args?, signers?]
             string? sessionName = _params[0]?.AsString();
             FairySession? session = sessionName == null ? null : GetOrCreateFairySession(sessionName);
-            Wallet wallet = GetSigningWallet(session);
+            Wallet wallet = GetSigningWallet(session, allowDefaultWallet: false);
 
             UInt160 scriptHash = UInt160.Parse(_params[1]!.AsString());
             string operation = _params[2]!.AsString();

@@ -265,7 +265,7 @@ namespace Neo.Plugins
                 throw new ArgumentException($"Workspace `{workspaceName}` has no contracts.");
 
             FairySession? session = sessionName == null ? null : GetOrCreateFairySession(sessionName);
-            Wallet wallet = GetSigningWallet(session);
+            Wallet wallet = GetSigningWallet(session, allowDefaultWallet: false);
 
             JArray deployments = new();
             foreach (WorkspaceContract contract in contracts)
@@ -392,7 +392,7 @@ namespace Neo.Plugins
 
             UInt160 contractHash = ResolveWorkspaceAlias(workspaceName, alias);
             FairySession? session = sessionName == null ? null : GetOrCreateFairySession(sessionName);
-            Wallet wallet = GetSigningWallet(session);
+            Wallet wallet = GetSigningWallet(session, allowDefaultWallet: false);
 
             if (signers.Length == 0)
             {
@@ -449,7 +449,7 @@ namespace Neo.Plugins
             Signer[] signers = _params.Count >= 4 && _params[3] is JArray signerArray ? SignersFromJson(signerArray, system.Settings) : System.Array.Empty<Signer>();
 
             FairySession? session = sessionName == null ? null : GetOrCreateFairySession(sessionName);
-            Wallet wallet = GetSigningWallet(session);
+            Wallet wallet = GetSigningWallet(session, allowDefaultWallet: false);
             if (signers.Length == 0)
             {
                 signers = new[]

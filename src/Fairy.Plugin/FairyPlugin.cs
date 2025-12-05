@@ -111,8 +111,8 @@ namespace Neo.Plugins
             if (hasServer == false)
             {
                 string serverCount = settings is null ? "null" : settings.Servers.Count.ToString();
-                ConsoleHelper.Warning($"Got {serverCount} servers from config, with no valid server. Using default!");
-                foreach (RpcServersSettings s in new RpcServersSettings[] { CreateDefaultFairyServerSettings("0.0.0.0"), CreateDefaultFairyServerSettings("::") })
+                ConsoleHelper.Warning($"Got {serverCount} servers from config, with no valid server. Falling back to loopback-only endpoints.");
+                foreach (RpcServersSettings s in new RpcServersSettings[] { CreateDefaultFairyServerSettings("127.0.0.1"), CreateDefaultFairyServerSettings("::1") })
                     TryStartFairyServer(s);
             }
 

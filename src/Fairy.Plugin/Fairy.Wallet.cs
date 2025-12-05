@@ -96,7 +96,7 @@ namespace Neo.Plugins
                 foreach (WalletAccount account in accounts)
                     if (account.ScriptHash == scriptHash)
                         return account;
-                return accounts[0];  // Return the default account! Otherwise it becomes difficult to simulate MakeTransaction for a single account
+                return null;
             }
             public override IEnumerable<WalletAccount> GetAccounts() => accounts;
             public override bool VerifyPassword(string password) => true;
@@ -200,7 +200,7 @@ namespace Neo.Plugins
         {
             string session = _params[0]!.AsString();
             FairySession fairySession = GetOrCreateFairySession(session);
-            Wallet wallet = fairySession.engine.runtimeArgs.fairyWallet ?? defaultFairyWallet ?? throw new InvalidOperationException("No wallet available for signing.");
+            Wallet wallet = GetSigningWallet(fairySession, allowDefaultWallet: false);
             byte[] message = Convert.FromBase64String(_params[1]!.AsString());
             NamedCurveHash namedCurveHash = _params.Count > 2 ? _params[2]!.AsEnum<NamedCurveHash>() : NamedCurveHash.secp256r1SHA256;
             (Cryptography.ECC.ECCurve curve, HashAlgorithm HashAlgorithm) = namedCurveHash switch
@@ -230,7 +230,7 @@ namespace Neo.Plugins
             string session = _params[0]!.AsString();
 
             FairySession fairySession = GetOrCreateFairySession(session);
-            Wallet wallet = fairySession.engine.runtimeArgs.fairyWallet ?? defaultFairyWallet ?? throw new InvalidOperationException("No wallet available for signing.");
+            Wallet wallet = GetSigningWallet(fairySession, allowDefaultWallet: false);
             WalletAccount firstAccount = wallet.GetAccounts().First();
             DataCache snapshotForSignature = fairySession.engine.SnapshotCache.CloneCache();
 

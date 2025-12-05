@@ -37,7 +37,7 @@ namespace Neo.Plugins
                 ConsoleHelper.Info($"Unused sessions in {settings.SessionExpirationTime.Days}d {settings.SessionExpirationTime.Hours}h:{settings.SessionExpirationTime.Minutes}m:{settings.SessionExpirationTime.Seconds}.{settings.SessionExpirationTime.Milliseconds}s will be cleared by Fairy.");
             FairyWallet defaultWallet = new FairyWallet(system.Settings);
             defaultFairyWallet = defaultWallet;
-            ConsoleHelper.Info($"\ndefaultFairyWallet:\n{defaultWallet.account.ScriptHash}\n{defaultWallet.account.Address}\n{defaultWallet.account.key.PublicKey}\n");
+            ConsoleHelper.Info("Loaded in-memory Fairy wallet for local testing.");
         }
 
         [FairyRpcMethod]
