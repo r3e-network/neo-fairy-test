@@ -33,10 +33,14 @@ jobs:
       - name: Checkout neo (for project references)
         if: steps.cache-neo.outputs.cache-hit != 'true'
         run: git clone --depth 1 --recurse-submodules https://github.com/neo-project/neo neo
+      - name: Install .NET SDK 10.0.100 (preview)
+        run: |
+          curl -sSL https://dot.net/v1/dotnet-install.sh | bash /dev/stdin --version 10.0.100 --quality preview --install-dir "$HOME/.dotnet"
+          echo "$HOME/.dotnet" >> $GITHUB_PATH
+          echo "DOTNET_ROOT=$HOME/.dotnet" >> $GITHUB_ENV
       - uses: actions/setup-dotnet@v4
         with:
-          global-json-file: global.json
-          include-prerelease: true
+          dotnet-version: 10.0.100
       - name: Restore
         env:
           NEOROOT: ${{ github.workspace }}/neo
@@ -71,10 +75,14 @@ jobs:
       - name: Checkout neo (for project references)
         if: steps.cache-neo.outputs.cache-hit != 'true'
         run: git clone --depth 1 --recurse-submodules https://github.com/neo-project/neo neo
+      - name: Install .NET SDK 10.0.100 (preview)
+        run: |
+          curl -sSL https://dot.net/v1/dotnet-install.sh | bash /dev/stdin --version 10.0.100 --quality preview --install-dir "$HOME/.dotnet"
+          echo "$HOME/.dotnet" >> $GITHUB_PATH
+          echo "DOTNET_ROOT=$HOME/.dotnet" >> $GITHUB_ENV
       - uses: actions/setup-dotnet@v4
         with:
-          global-json-file: global.json
-          include-prerelease: true
+          dotnet-version: 10.0.100
       - name: Build neo-cli (Release)
         env:
           NEOROOT: ${{ github.workspace }}/neo
