@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://neo.org/images/neo-logo/NEO-logo.svg" alt="Neo Fairy" width="200"/>
+  <img src="assets/logo.svg" alt="Neo Fairy" width="200"/>
 </p>
 
 <h1 align="center">Neo Fairy</h1>

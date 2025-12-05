@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <defs>
+    <linearGradient id="neoGreen" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#00E599"/>
+      <stop offset="100%" style="stop-color:#00AF92"/>
+    </linearGradient>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="1.5" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <circle cx="64" cy="64" r="60" fill="#1a1a2e" stroke="url(#neoGreen)" stroke-width="2"/>
+
+  <!-- Wing Left -->
+  <path d="M45,50 Q25,35 32,60 Q20,55 35,72 Q50,85 52,65 Q45,58 45,50" fill="url(#neoGreen)" opacity="0.7" filter="url(#glow)"/>
+
+  <!-- Wing Right -->
+  <path d="M83,50 Q103,35 96,60 Q108,55 93,72 Q78,85 76,65 Q83,58 83,50" fill="url(#neoGreen)" opacity="0.7" filter="url(#glow)"/>
+
+  <!-- Body -->
+  <ellipse cx="64" cy="68" rx="10" ry="14" fill="url(#neoGreen)" filter="url(#glow)"/>
+
+  <!-- Head -->
+  <circle cx="64" cy="48" r="9" fill="url(#neoGreen)" filter="url(#glow)"/>
+
+  <!-- Wand -->
+  <line x1="64" y1="82" x2="64" y2="105" stroke="url(#neoGreen)" stroke-width="3" stroke-linecap="round" filter="url(#glow)"/>
+
+  <!-- Star -->
+  <polygon points="64,105 66,110 72,110 68,114 70,120 64,116 58,120 60,114 56,110 62,110" fill="#00E599" filter="url(#glow)"/>
+
+  <!-- Sparkles -->
+  <circle cx="35" cy="38" r="2" fill="#00E599" opacity="0.8"/>
+  <circle cx="93" cy="38" r="2" fill="#00E599" opacity="0.8"/>
+  <circle cx="40" cy="95" r="1.5" fill="#00E599" opacity="0.6"/>
+  <circle cx="88" cy="95" r="1.5" fill="#00E599" opacity="0.6"/>
+</svg>
