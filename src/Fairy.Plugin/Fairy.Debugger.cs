@@ -74,7 +74,7 @@ namespace Neo.Plugins
             FairyEngine newEngine;
             BreakReason breakReason = BreakReason.None;
             ConcurrentQueue<LogEventArgs> logs = new();
-            newEngine = DebugRun(script, testSession.engine.SnapshotCache.CloneCache(), out breakReason, container: tx, settings: system.Settings, gas: settings.MaxGasInvoke, oldEngine: testSession.engine, logHandler: (engine, logEventArgs) => logs.Enqueue(logEventArgs));
+            newEngine = DebugRun(script, testSession.engine.SnapshotCache.CloneCache(), out breakReason, container: tx, settings: system.Settings, gas: settings.MaxGasInvoke, oldEngine: testSession.engine, logHandler: (_, logEventArgs) => logs.Enqueue(logEventArgs));
             if (writeSnapshot)
                 testSession.debugEngine = newEngine;
             return DumpDebugResultJson(newEngine, breakReason, logs);
@@ -98,7 +98,7 @@ namespace Neo.Plugins
             FairyEngine newEngine;
             BreakReason breakReason = BreakReason.None;
             ConcurrentQueue<LogEventArgs> logs = new();
-            newEngine = DebugRun(script, testSession.engine.SnapshotCache.CloneCache(), out breakReason, container: tx, settings: system.Settings, gas: settings.MaxGasInvoke, oldEngine: testSession.engine, logHandler: (engine, logEventArgs) => logs.Enqueue(logEventArgs));
+            newEngine = DebugRun(script, testSession.engine.SnapshotCache.CloneCache(), out breakReason, container: tx, settings: system.Settings, gas: settings.MaxGasInvoke, oldEngine: testSession.engine, logHandler: (_, logEventArgs) => logs.Enqueue(logEventArgs));
             if (writeSnapshot)
                 testSession.debugEngine = newEngine;
             return DumpDebugResultJson(newEngine, breakReason, logs);
@@ -163,7 +163,6 @@ namespace Neo.Plugins
                             traceback.Append($"\r\nFile {sourceCode.sourceFilename}, line {sourceCode.lineNum}: {sourceCode.sourceContent}");
                         }
                     }
-                    //catch (Exception _) {; }
                     traceback.Append($"\r\n\tScriptHash={contextScriptHash}, InstructionPointer={context.InstructionPointer}, OpCode {context.CurrentInstruction?.OpCode}, Script Length={context.Script.Length}");
                 }
                 traceback.Append($"\r\n{json["exception"]!.GetString()}");
@@ -260,7 +259,8 @@ namespace Neo.Plugins
                 SourceFilenameAndLineNum currentSourceCode = GetCurrentSourceCode(engine);
                 if (startSourceCode == defaultSource && currentSourceCode != defaultSource)
                     return true;
-                // TODO: startSourceCode is code from framework, currentSourceCode is not, return true
+                // Future enhancement: Also break if startSourceCode is from framework code
+                // and currentSourceCode is user code (different source roots)
                 if (currentSourceCode.sourceFilename == startSourceCode.sourceFilename
                     && currentSourceCode.lineNum != startSourceCode.lineNum)
                     return true;

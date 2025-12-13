@@ -479,10 +479,10 @@ namespace Neo.Plugins
                 JObject json = TransactionToJson(tx, system.Settings);
                 if (state is TransactionState s)
                 {
-#pragma warning disable CS8600, CS8604
-                    UInt256 blockHash = NativeContract.Ledger.GetBlockHash(snapshot, s.BlockIndex);
-                    TrimmedBlock? block = NativeContract.Ledger.GetTrimmedBlock(snapshot, blockHash);
-#pragma warning restore CS8600, CS8604
+                    UInt256? blockHash = NativeContract.Ledger.GetBlockHash(snapshot, s.BlockIndex);
+                    TrimmedBlock? block = blockHash != null
+                        ? NativeContract.Ledger.GetTrimmedBlock(snapshot, blockHash)
+                        : null;
                     if (block != null)
                     {
                         json["blockhash"] = block.Hash.ToString();

@@ -42,6 +42,11 @@ namespace Neo.Plugins
             public override KeyPair GetKey() => key;
         }
 
+        /// <summary>
+        /// Lightweight in-memory wallet for testing purposes only.
+        /// Does not support persistence operations (Save, Delete, ChangePassword)
+        /// as it is designed for ephemeral test sessions.
+        /// </summary>
         public class FairyWallet : Wallet
         {
             public readonly List<FairyAccount> accounts = new();
@@ -51,7 +56,9 @@ namespace Neo.Plugins
 
             public FairyWallet(ProtocolSettings settings, string nep2 = "6PYKrXGB2bhiux49bKYJPMMpaVic6SRrJcCLC8tdrz3YPLgktpe3H3PN35", string password = "1", int N = 16384, int r = 8, int p = 8) : base("./fairy/path", settings) => CreateAccountFromNep2(nep2, password, N, r, p);
             public FairyWallet(string wif, ProtocolSettings settings) : base("./fairy/path", settings) => CreateAccountFromWif(wif);
-            public override bool ChangePassword(string oldPassword, string newPassword) => throw new NotImplementedException($"Password is unnecessary for {nameof(FairyWallet)}");
+
+            /// <summary>Not supported: FairyWallet is in-memory only and has no password.</summary>
+            public override bool ChangePassword(string oldPassword, string newPassword) => throw new NotSupportedException($"Password operations are not supported for in-memory {nameof(FairyWallet)}");
             public override bool Contains(UInt160 scriptHash) => GetAccount(scriptHash) != null;
             public WalletAccount CreateAccountFromNep2(string nep2, string password, int N = 16384, int r = 8, int p = 8) => CreateAccount(GetPrivateKeyFromNEP2(nep2, password, ProtocolSettings.AddressVersion, N, r, p));
             public WalletAccount CreateAccountFromWif(string wif) => CreateAccount(GetPrivateKeyFromWIF(wif));
@@ -71,7 +78,7 @@ namespace Neo.Plugins
                     if (acc.ScriptHash == contract.ScriptHash)
                         return acc;
                 if (key == null)
-                    throw new NotImplementedException("privateKey==null not supported for now");
+                    throw new NotSupportedException("FairyWallet requires a private key for account creation");
                 FairyAccount account = new FairyAccount(this, contract.ScriptHash, key)
                 {
                     Contract = contract
@@ -79,8 +86,12 @@ namespace Neo.Plugins
                 accounts.Add(account);
                 return account;
             }
-            public override WalletAccount CreateAccount(UInt160 scriptHash) => throw new NotImplementedException("privateKey==null not supported for now");
-            public override void Delete() => throw new NotImplementedException();
+
+            /// <summary>Not supported: FairyWallet requires a private key.</summary>
+            public override WalletAccount CreateAccount(UInt160 scriptHash) => throw new NotSupportedException("FairyWallet requires a private key for account creation");
+
+            /// <summary>Not supported: FairyWallet is in-memory only.</summary>
+            public override void Delete() => throw new NotSupportedException("Delete is not supported for in-memory FairyWallet");
             public override bool DeleteAccount(UInt160 scriptHash)
             {
                 foreach (FairyAccount account in accounts)
@@ -100,7 +111,9 @@ namespace Neo.Plugins
             }
             public override IEnumerable<WalletAccount> GetAccounts() => accounts;
             public override bool VerifyPassword(string password) => true;
-            public override void Save() => throw new NotImplementedException();
+
+            /// <summary>Not supported: FairyWallet is in-memory only.</summary>
+            public override void Save() => throw new NotSupportedException("Save is not supported for in-memory FairyWallet");
         }
 
         protected Wallet defaultFairyWallet;
@@ -216,11 +229,9 @@ namespace Neo.Plugins
                 _ => throw new NotImplementedException($"Invalid namedCurveHash {namedCurveHash}"),
             };
             JObject json = new();
-#pragma warning disable CS8600, CS8602
             WalletAccount firstAccount = wallet.GetAccounts().FirstOrDefault() ?? throw new InvalidOperationException("No accounts in wallet.");
-            KeyPair keyPair = firstAccount.GetKey();
+            KeyPair keyPair = firstAccount.GetKey() ?? throw new InvalidOperationException("Account has no private key (watch-only).");
             json["signed"] = Convert.ToBase64String(Crypto.Sign(message, keyPair.PrivateKey, curve, HashAlgorithm));
-#pragma warning restore CS8600, CS8602
             return json;
         }
 

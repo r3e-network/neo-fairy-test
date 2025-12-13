@@ -11,10 +11,10 @@
 
 using Neo.Json;
 using System.Collections.Concurrent;
+using System.Diagnostics.CodeAnalysis;
 
 namespace Neo.Plugins
 {
-#pragma warning disable CS8601
     public partial class Fairy
     {
         public readonly ConcurrentDictionary<string, FairySession> sessionStringToFairySession = new();
@@ -23,10 +23,10 @@ namespace Neo.Plugins
         {
             NeoSystem sys = system ?? throw new InvalidOperationException("System not initialized.");
             var value = sessionStringToFairySession.GetOrAdd(session, _ => NewFairySession(sys, this));
-            return value!;
+            return value;
         }
 
-        private bool TryGetFairySession(string session, out FairySession fairySession)
+        private bool TryGetFairySession(string session, [NotNullWhen(true)] out FairySession? fairySession)
         {
             return sessionStringToFairySession.TryGetValue(session, out fairySession);
         }
@@ -106,4 +106,3 @@ namespace Neo.Plugins
         }
     }
 }
-#pragma warning restore CS8601

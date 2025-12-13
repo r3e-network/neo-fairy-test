@@ -113,8 +113,8 @@ namespace Neo.Plugins
 
         protected async void OnBlockAdded(NeoSystem system, Block block, DataCache snapshot, IReadOnlyList<Blockchain.ApplicationExecuted> applicationExecutedList)
         {
-            HashSet<WebSocketSubscriptionNeoGoCompatible> subscriptionsToClose = new();
-            ConcurrentQueue<Task> webSocketTasks = new();
+            ConcurrentBag<WebSocketSubscriptionNeoGoCompatible> subscriptionsToClose = new();
+            List<Task> tasks = new();
             List<WebSocketSubscriptionNeoGoCompatible> subscribers;
             lock (subscriptionsLock)
             {
@@ -139,20 +139,20 @@ namespace Neo.Plugins
                 returnedJson["method"] = "block_added";
                 JArray @params = new() { block.ToJson(system.Settings) };
                 returnedJson["params"] = @params;
-                webSocketTasks.Append(Task.Run(async () =>
+                tasks.Add(Task.Run(async () =>
                 {
                     if (await WebSocketSendAsync(subscription, returnedJson))
                         subscriptionsToClose.Add(subscription);
                 }));
             }
-            await Task.WhenAll(webSocketTasks);
+            await Task.WhenAll(tasks);
             CloseSubscriptions(subscriptionsToClose);
         }
 
         protected async void OnTransactionRemoved(object? sender, TransactionRemovedEventArgs removedEventArgs)
         {
-            HashSet<WebSocketSubscriptionNeoGoCompatible> subscriptionsToClose = new();
-            ConcurrentQueue<Task> webSocketTasks = new();
+            ConcurrentBag<WebSocketSubscriptionNeoGoCompatible> subscriptionsToClose = new();
+            List<Task> tasks = new();
             List<WebSocketSubscriptionNeoGoCompatible> subscribers;
             lock (subscriptionsLock)
             {
@@ -169,21 +169,20 @@ namespace Neo.Plugins
                 foreach (Transaction tx in removedEventArgs.Transactions)
                     @params.Add(tx.ToJson(system.Settings));
                 returnedJson["params"] = @params;
-                webSocketTasks.Append(Task.Run(async () =>
+                tasks.Add(Task.Run(async () =>
                 {
                     if (await WebSocketSendAsync(subscription, returnedJson))
                         subscriptionsToClose.Add(subscription);
                 }));
             }
-            await Task.WhenAll(webSocketTasks);
+            await Task.WhenAll(tasks);
             CloseSubscriptions(subscriptionsToClose);
         }
 
-#pragma warning disable CS8600, CS8602, CS8604
         protected async void OnTransactionAdded(object? sender, Transaction tx)
         {
-            HashSet<WebSocketSubscriptionNeoGoCompatible> subscriptionsToClose = new();
-            ConcurrentQueue<Task> webSocketTasks = new();
+            ConcurrentBag<WebSocketSubscriptionNeoGoCompatible> subscriptionsToClose = new();
+            List<Task> tasks = new();
             List<WebSocketSubscriptionNeoGoCompatible> subscribers;
             lock (subscriptionsLock)
             {
@@ -193,8 +192,8 @@ namespace Neo.Plugins
             }
             foreach (WebSocketSubscriptionNeoGoCompatible subscription in subscribers)
             {
-                JObject _params = subscription.@params;
-                if (_params.ContainsProperty("sender"))
+                JObject? _params = subscription.@params;
+                if (_params?.ContainsProperty("sender") == true)
                 {
                     if (_params["sender"] is not JString senderToken)
                         continue;
@@ -221,20 +220,20 @@ namespace Neo.Plugins
                 returnedJson["method"] = "transaction_added";
                 JArray @params = new() { tx.ToJson(system.Settings) };
                 returnedJson["params"] = @params;
-                webSocketTasks.Append(Task.Run(async () =>
+                tasks.Add(Task.Run(async () =>
                 {
                     if (await WebSocketSendAsync(subscription, returnedJson))
                         subscriptionsToClose.Add(subscription);
                 }));
             }
-            await Task.WhenAll(webSocketTasks);
+            await Task.WhenAll(tasks);
             CloseSubscriptions(subscriptionsToClose);
         }
 
         protected async void OnNotification(NeoSystem system, Block block, DataCache snapshot, IReadOnlyList<Blockchain.ApplicationExecuted> applicationExecutedList)
         {
-            HashSet<WebSocketSubscriptionNeoGoCompatible> subscriptionsToClose = new();
-            ConcurrentQueue<Task> webSocketTasks = new();
+            ConcurrentBag<WebSocketSubscriptionNeoGoCompatible> subscriptionsToClose = new();
+            List<Task> tasks = new();
             List<WebSocketSubscriptionNeoGoCompatible> subscribers;
             lock (subscriptionsLock)
             {
@@ -244,12 +243,12 @@ namespace Neo.Plugins
             }
             foreach (WebSocketSubscriptionNeoGoCompatible subscription in subscribers)
             {
-                JObject _params = subscription.@params;
+                JObject? _params = subscription.@params;
                 foreach (Blockchain.ApplicationExecuted app in applicationExecutedList)
                 {
                     foreach (NotifyEventArgs notification in app.Notifications)
                     {
-                        if (_params.ContainsProperty("contract"))
+                        if (_params?.ContainsProperty("contract") == true)
                         {
                             if (_params["contract"] is not JString contractToken)
                                 continue;
@@ -265,7 +264,7 @@ namespace Neo.Plugins
                             if (wantedContractUInt160 != notification.ScriptHash)
                                 continue;
                         }
-                        if (_params.ContainsProperty("name") && _params["name"]!.AsString() != notification.EventName)
+                        if (_params?.ContainsProperty("name") == true && _params["name"]?.AsString() != notification.EventName)
                             continue;
                         JObject returnedJson = new();
                         returnedJson["jsonrpc"] = "2.0";
@@ -279,7 +278,7 @@ namespace Neo.Plugins
                         notificationJson["state"] = notification.State.ToJson();
                         JArray @params = new() { notificationJson };
                         returnedJson["params"] = @params;
-                        webSocketTasks.Append(Task.Run(async () =>
+                        tasks.Add(Task.Run(async () =>
                         {
                             if (await WebSocketSendAsync(subscription, returnedJson))
                                 subscriptionsToClose.Add(subscription);
@@ -287,14 +286,14 @@ namespace Neo.Plugins
                     }
                 }
             }
-            await Task.WhenAll(webSocketTasks);
+            await Task.WhenAll(tasks);
             CloseSubscriptions(subscriptionsToClose);
         }
 
         protected async void OnTransactionExecuted(NeoSystem system, Block block, DataCache snapshot, IReadOnlyList<Blockchain.ApplicationExecuted> applicationExecutedList)
         {
-            HashSet<WebSocketSubscriptionNeoGoCompatible> subscriptionsToClose = new();
-            ConcurrentQueue<Task> webSocketTasks = new();
+            ConcurrentBag<WebSocketSubscriptionNeoGoCompatible> subscriptionsToClose = new();
+            List<Task> tasks = new();
             List<WebSocketSubscriptionNeoGoCompatible> subscribers;
             lock (subscriptionsLock)
             {
@@ -350,17 +349,16 @@ namespace Neo.Plugins
                     returnedJson["method"] = "transaction_executed";
                     JArray @params = new() { app.Transaction?.ToJson(system.Settings) };
                     returnedJson["params"] = @params;
-                    webSocketTasks.Append(Task.Run(async () =>
+                    tasks.Add(Task.Run(async () =>
                     {
                         if (await WebSocketSendAsync(subscription, returnedJson))
                             subscriptionsToClose.Add(subscription);
                     }));
                 }
             }
-            await Task.WhenAll(webSocketTasks);
+            await Task.WhenAll(tasks);
             CloseSubscriptions(subscriptionsToClose);
         }
-#pragma warning restore CS8600, CS8602, CS8604
 
         [WebsocketNeoGoCompatibleMethod]
         protected virtual object Subscribe(WebSocket webSocket, JArray _params)

@@ -107,7 +107,7 @@ namespace Neo.Plugins
             FairyEngine oldEngine = testSession.engine;
             FairyEngine newEngine;
             ConcurrentQueue<LogEventArgs> logs = new();
-            newEngine = FairyEngine.Run(script, oldEngine.SnapshotCache.CloneCache(), this, container: tx, settings: system.Settings, gas: settings.MaxGasInvoke, oldEngine: oldEngine, logHandler: (engine, logEventArgs) => logs.Enqueue(logEventArgs));
+            newEngine = FairyEngine.Run(script, oldEngine.SnapshotCache.CloneCache(), this, container: tx, settings: system.Settings, gas: settings.MaxGasInvoke, oldEngine: oldEngine, logHandler: (_, logEventArgs) => logs.Enqueue(logEventArgs));
             if (writeSnapshot && newEngine.State == VMState.HALT)
                 testSession.engine = newEngine;
 
@@ -185,7 +185,6 @@ namespace Neo.Plugins
                             traceback.Append(sourceCodeTraceback);
                         }
                     }
-                    //catch (Exception _) {; }
                     traceback.Append($"\r\n\tInstructionPointer={context.InstructionPointer}, OpCode {context.CurrentInstruction?.OpCode}, Script Length={context.Script.Length} {contextScriptHash}[{contextContractName}]{workspaceAlias}");
                 }
                 traceback.Append($"\r\n{json["exception"]!.GetString()}");
