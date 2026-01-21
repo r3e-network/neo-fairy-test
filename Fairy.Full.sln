@@ -3,17 +3,13 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.0.31903.59
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Neo.ConsoleService", "..\neo\src\Neo.ConsoleService\Neo.ConsoleService.csproj", "{A2E50BB0-71EC-4DFD-B9A0-55F8953786DD}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Neo.Json", "neo_csharp\core\src\Neo.Json\Neo.Json.csproj", "{38E423D8-80E2-493F-9903-622A73DCFF92}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Neo.Json", "..\neo\src\Neo.Json\Neo.Json.csproj", "{38E423D8-80E2-493F-9903-622A73DCFF92}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Neo", "neo_csharp\core\src\Neo\Neo.csproj", "{5AFFEE83-1A4D-48D3-BA62-81DB9C4A377B}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RpcServer", "..\neo\src\Plugins\RpcServer\RpcServer.csproj", "{3632CB01-EEE1-4205-870B-19DCB8B6500E}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Neo.Extensions", "neo_csharp\core\src\Neo.Extensions\Neo.Extensions.csproj", "{0B75820F-B93F-4781-AC92-2CCDD6C42EE8}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Neo", "..\neo\src\Neo\Neo.csproj", "{5AFFEE83-1A4D-48D3-BA62-81DB9C4A377B}"
-EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Neo.Extensions", "..\neo\src\Neo.Extensions\Neo.Extensions.csproj", "{0B75820F-B93F-4781-AC92-2CCDD6C42EE8}"
-EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Neo.IO", "..\neo\src\Neo.IO\Neo.IO.csproj", "{AA7D3B0F-ACD5-4763-9590-2AE1A25209C4}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Neo.IO", "neo_csharp\core\src\Neo.IO\Neo.IO.csproj", "{AA7D3B0F-ACD5-4763-9590-2AE1A25209C4}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{0AB3BF05-4346-4AA6-1389-037BE0695223}"
 EndProject
@@ -37,6 +33,8 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Fairy.Plugin", "Fairy.Plugi
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Fairy", "src\Fairy.Plugin\Fairy.csproj", "{2810798A-8F5B-4B69-811D-34D2D7B58FFA}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Neo.Fairy.Cli.Tests", "tests\Neo.Fairy.Cli.Tests\Neo.Fairy.Cli.Tests.csproj", "{F6EB98FD-1A5F-4D0D-B434-D8573B161E0B}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -47,18 +45,6 @@ Global
 		Release|x86 = Release|x86
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
-		{A2E50BB0-71EC-4DFD-B9A0-55F8953786DD}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{A2E50BB0-71EC-4DFD-B9A0-55F8953786DD}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{A2E50BB0-71EC-4DFD-B9A0-55F8953786DD}.Debug|x64.ActiveCfg = Debug|Any CPU
-		{A2E50BB0-71EC-4DFD-B9A0-55F8953786DD}.Debug|x64.Build.0 = Debug|Any CPU
-		{A2E50BB0-71EC-4DFD-B9A0-55F8953786DD}.Debug|x86.ActiveCfg = Debug|Any CPU
-		{A2E50BB0-71EC-4DFD-B9A0-55F8953786DD}.Debug|x86.Build.0 = Debug|Any CPU
-		{A2E50BB0-71EC-4DFD-B9A0-55F8953786DD}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{A2E50BB0-71EC-4DFD-B9A0-55F8953786DD}.Release|Any CPU.Build.0 = Release|Any CPU
-		{A2E50BB0-71EC-4DFD-B9A0-55F8953786DD}.Release|x64.ActiveCfg = Release|Any CPU
-		{A2E50BB0-71EC-4DFD-B9A0-55F8953786DD}.Release|x64.Build.0 = Release|Any CPU
-		{A2E50BB0-71EC-4DFD-B9A0-55F8953786DD}.Release|x86.ActiveCfg = Release|Any CPU
-		{A2E50BB0-71EC-4DFD-B9A0-55F8953786DD}.Release|x86.Build.0 = Release|Any CPU
 		{38E423D8-80E2-493F-9903-622A73DCFF92}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{38E423D8-80E2-493F-9903-622A73DCFF92}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{38E423D8-80E2-493F-9903-622A73DCFF92}.Debug|x64.ActiveCfg = Debug|Any CPU
@@ -71,18 +57,6 @@ Global
 		{38E423D8-80E2-493F-9903-622A73DCFF92}.Release|x64.Build.0 = Release|Any CPU
 		{38E423D8-80E2-493F-9903-622A73DCFF92}.Release|x86.ActiveCfg = Release|Any CPU
 		{38E423D8-80E2-493F-9903-622A73DCFF92}.Release|x86.Build.0 = Release|Any CPU
-		{3632CB01-EEE1-4205-870B-19DCB8B6500E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{3632CB01-EEE1-4205-870B-19DCB8B6500E}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{3632CB01-EEE1-4205-870B-19DCB8B6500E}.Debug|x64.ActiveCfg = Debug|Any CPU
-		{3632CB01-EEE1-4205-870B-19DCB8B6500E}.Debug|x64.Build.0 = Debug|Any CPU
-		{3632CB01-EEE1-4205-870B-19DCB8B6500E}.Debug|x86.ActiveCfg = Debug|Any CPU
-		{3632CB01-EEE1-4205-870B-19DCB8B6500E}.Debug|x86.Build.0 = Debug|Any CPU
-		{3632CB01-EEE1-4205-870B-19DCB8B6500E}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{3632CB01-EEE1-4205-870B-19DCB8B6500E}.Release|Any CPU.Build.0 = Release|Any CPU
-		{3632CB01-EEE1-4205-870B-19DCB8B6500E}.Release|x64.ActiveCfg = Release|Any CPU
-		{3632CB01-EEE1-4205-870B-19DCB8B6500E}.Release|x64.Build.0 = Release|Any CPU
-		{3632CB01-EEE1-4205-870B-19DCB8B6500E}.Release|x86.ActiveCfg = Release|Any CPU
-		{3632CB01-EEE1-4205-870B-19DCB8B6500E}.Release|x86.Build.0 = Release|Any CPU
 		{5AFFEE83-1A4D-48D3-BA62-81DB9C4A377B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{5AFFEE83-1A4D-48D3-BA62-81DB9C4A377B}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{5AFFEE83-1A4D-48D3-BA62-81DB9C4A377B}.Debug|x64.ActiveCfg = Debug|Any CPU
@@ -215,6 +189,18 @@ Global
 		{2810798A-8F5B-4B69-811D-34D2D7B58FFA}.Release|x64.Build.0 = Release|Any CPU
 		{2810798A-8F5B-4B69-811D-34D2D7B58FFA}.Release|x86.ActiveCfg = Release|Any CPU
 		{2810798A-8F5B-4B69-811D-34D2D7B58FFA}.Release|x86.Build.0 = Release|Any CPU
+		{F6EB98FD-1A5F-4D0D-B434-D8573B161E0B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F6EB98FD-1A5F-4D0D-B434-D8573B161E0B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F6EB98FD-1A5F-4D0D-B434-D8573B161E0B}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{F6EB98FD-1A5F-4D0D-B434-D8573B161E0B}.Debug|x64.Build.0 = Debug|Any CPU
+		{F6EB98FD-1A5F-4D0D-B434-D8573B161E0B}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{F6EB98FD-1A5F-4D0D-B434-D8573B161E0B}.Debug|x86.Build.0 = Debug|Any CPU
+		{F6EB98FD-1A5F-4D0D-B434-D8573B161E0B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{F6EB98FD-1A5F-4D0D-B434-D8573B161E0B}.Release|Any CPU.Build.0 = Release|Any CPU
+		{F6EB98FD-1A5F-4D0D-B434-D8573B161E0B}.Release|x64.ActiveCfg = Release|Any CPU
+		{F6EB98FD-1A5F-4D0D-B434-D8573B161E0B}.Release|x64.Build.0 = Release|Any CPU
+		{F6EB98FD-1A5F-4D0D-B434-D8573B161E0B}.Release|x86.ActiveCfg = Release|Any CPU
+		{F6EB98FD-1A5F-4D0D-B434-D8573B161E0B}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -229,5 +215,6 @@ Global
 		{9C2E19CC-5671-4BDA-A8ED-A3FB498F3908} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 		{9C0BF5A8-DCD1-D531-93C2-CA61A427B129} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 		{2810798A-8F5B-4B69-811D-34D2D7B58FFA} = {9C0BF5A8-DCD1-D531-93C2-CA61A427B129}
+		{F6EB98FD-1A5F-4D0D-B434-D8573B161E0B} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 	EndGlobalSection
 EndGlobal

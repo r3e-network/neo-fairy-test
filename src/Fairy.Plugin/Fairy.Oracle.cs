@@ -136,7 +136,7 @@ namespace Neo.Plugins
             engine.Execute();
             tx.NetworkFee += engine.FeeConsumed;
 
-            var executionFactor = NativeContract.Policy.GetExecFeeFactor(snapshot);
+            var executionFactor = NativeContract.Policy.GetExecFeeFactor(settings, snapshot, height);
             var networkFee = executionFactor * SmartContract.Helper.MultiSignatureContractCost(m, n);
             tx.NetworkFee += networkFee;
 

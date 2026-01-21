@@ -421,11 +421,12 @@ namespace Neo.Plugins
             string? session = _params[0]?.AsString();
             DataCache snapshot = session == null ? system.StoreView : GetOrCreateFairySession(session).engine.SnapshotCache;
             uint nextBlockIndex = NativeContract.Ledger.CurrentIndex(snapshot) + 1;
+            var engine = ApplicationEngine.Create(TriggerType.Application, null, snapshot, settings: system.Settings);
             JObject json = new JObject();
             for (int i = 1; i < _params.Count; ++i)
             {
                 UInt160 account = UInt160.Parse(_params[i]!.AsString());
-                json[account.ToString()] = NativeContract.NEO.UnclaimedGas(snapshot, account, nextBlockIndex).ToString();
+                json[account.ToString()] = NativeContract.NEO.UnclaimedGas(engine, account, nextBlockIndex).ToString();
             }
             return json;
         }

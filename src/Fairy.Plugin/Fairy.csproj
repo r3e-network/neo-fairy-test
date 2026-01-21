@@ -6,13 +6,73 @@
     <Nullable>enable</Nullable>
     <!-- Prevent the default recursive Compile glob from pulling in src/tests/examples -->
     <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <!-- Use Neo.CLI binaries when Neo sources aren't available. -->
+    <NeoCliDir Condition="'$(NeoCliDir)'=='' and Exists('$(NeoRoot)/bin/Neo.CLI/net10.0/neo-cli.dll')">$(NeoRoot)/bin/Neo.CLI/net10.0</NeoCliDir>
+    <NeoCliDir Condition="'$(NeoCliDir)'=='' and Exists('$(NeoRoot)/neo-cli/bin/Release/net10.0/neo-cli.dll')">$(NeoRoot)/neo-cli/bin/Release/net10.0</NeoCliDir>
+    <NeoCliDir Condition="'$(NeoCliDir)'=='' and Exists('$(NeoRoot)/neo-cli/bin/Debug/net10.0/neo-cli.dll')">$(NeoRoot)/neo-cli/bin/Debug/net10.0</NeoCliDir>
+    <NeoCliDir Condition="'$(NeoCliDir)'=='' and Exists('$(NeoRoot)/node/bin/Neo.CLI/net10.0/neo-cli.dll')">$(NeoRoot)/node/bin/Neo.CLI/net10.0</NeoCliDir>
+    <NeoCliDir Condition="'$(NeoCliDir)'=='' and Exists('$(NeoRoot)/node/src/Neo.CLI/bin/Release/net10.0/neo-cli.dll')">$(NeoRoot)/node/src/Neo.CLI/bin/Release/net10.0</NeoCliDir>
+    <NeoCliDir Condition="'$(NeoCliDir)'=='' and Exists('$(NeoRoot)/node/src/Neo.CLI/bin/Debug/net10.0/neo-cli.dll')">$(NeoRoot)/node/src/Neo.CLI/bin/Debug/net10.0</NeoCliDir>
+
+    <NeoRpcServerDir Condition="'$(NeoRpcServerDir)'=='' and Exists('$(NeoRoot)/bin/Neo.Plugins.RpcServer/net10.0/RpcServer.dll')">$(NeoRoot)/bin/Neo.Plugins.RpcServer/net10.0</NeoRpcServerDir>
+    <NeoRpcServerDir Condition="'$(NeoRpcServerDir)'=='' and Exists('$(NeoRoot)/bin/Neo.Plugins.RpcServer/net9.0/RpcServer.dll')">$(NeoRoot)/bin/Neo.Plugins.RpcServer/net9.0</NeoRpcServerDir>
+    <NeoRpcServerDir Condition="'$(NeoRpcServerDir)'=='' and Exists('$(NeoRoot)/node/bin/Neo.Plugins.RpcServer/net10.0/RpcServer.dll')">$(NeoRoot)/node/bin/Neo.Plugins.RpcServer/net10.0</NeoRpcServerDir>
+    <NeoRpcServerDir Condition="'$(NeoRpcServerDir)'=='' and Exists('$(NeoRoot)/node/plugins/RpcServer/bin/Release/net10.0/RpcServer.dll')">$(NeoRoot)/node/plugins/RpcServer/bin/Release/net10.0</NeoRpcServerDir>
+    <NeoRpcServerDir Condition="'$(NeoRpcServerDir)'=='' and Exists('$(NeoRoot)/node/plugins/RpcServer/bin/Debug/net10.0/RpcServer.dll')">$(NeoRoot)/node/plugins/RpcServer/bin/Debug/net10.0</NeoRpcServerDir>
   </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
 
   <!-- Prefer the layout used in the merged neo repo relative to repo root -->
   <ItemGroup Condition="Exists('$(NeoRoot)/src/Neo.ConsoleService/Neo.ConsoleService.csproj')">
     <ProjectReference Include="$(NeoRoot)/src/Neo.ConsoleService/Neo.ConsoleService.csproj" />
     <ProjectReference Include="$(NeoRoot)/src/Neo.Json/Neo.Json.csproj" />
     <ProjectReference Include="$(NeoRoot)/src/Plugins/RpcServer/RpcServer.csproj" />
+  </ItemGroup>
+
+  <!-- Split neo_csharp layout (core + node) -->
+  <ItemGroup Condition="Exists('$(NeoRoot)/core/src/Neo.Json/Neo.Json.csproj') and Exists('$(NeoRoot)/node/src/Neo.ConsoleService/Neo.ConsoleService.csproj')">
+    <ProjectReference Include="$(NeoRoot)/core/src/Neo.Json/Neo.Json.csproj" />
+    <ProjectReference Include="$(NeoRoot)/node/src/Neo.ConsoleService/Neo.ConsoleService.csproj" />
+    <ProjectReference Include="$(NeoRoot)/node/plugins/RpcServer/RpcServer.csproj" />
+  </ItemGroup>
+
+  <!-- Fallback: reference built Neo binaries (Neo.CLI + RpcServer plugin). -->
+  <ItemGroup Condition="!Exists('$(NeoRoot)/src/Neo.ConsoleService/Neo.ConsoleService.csproj') and !Exists('$(NeoRoot)/node/src/Neo.ConsoleService/Neo.ConsoleService.csproj') and Exists('$(NeoCliDir)/Neo.dll') and Exists('$(NeoRpcServerDir)/RpcServer.dll')">
+    <Reference Include="Neo">
+      <HintPath>$(NeoCliDir)/Neo.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="Neo.ConsoleService">
+      <HintPath>$(NeoCliDir)/Neo.ConsoleService.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="Neo.Extensions">
+      <HintPath>$(NeoCliDir)/Neo.Extensions.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="Neo.IO">
+      <HintPath>$(NeoCliDir)/Neo.IO.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="Neo.Json">
+      <HintPath>$(NeoCliDir)/Neo.Json.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="Neo.VM">
+      <HintPath>$(NeoCliDir)/Neo.VM.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="Akka">
+      <HintPath>$(NeoCliDir)/Akka.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="RpcServer">
+      <HintPath>$(NeoRpcServerDir)/RpcServer.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
   </ItemGroup>
 
   <ItemGroup>

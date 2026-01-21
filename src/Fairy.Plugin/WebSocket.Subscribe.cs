@@ -198,18 +198,19 @@ namespace Neo.Plugins
                     if (_params["sender"] is not JString senderToken)
                         continue;
                     string wantedSender = senderToken.AsString();
-                    if (!UInt160.TryParse(wantedSender, out UInt160 wantedSenderUInt160))
+                    if (!UInt160.TryParse(wantedSender, out UInt160? wantedSenderUInt160))
                         continue;
+                    var wantedSenderValue = wantedSenderUInt160!;
                     if (!wantedSender.StartsWith("0x", StringComparison.InvariantCultureIgnoreCase))
                     {
                         // little-endian; reverse the UInt160
-                        wantedSenderUInt160 = new UInt160(wantedSenderUInt160.GetSpan().ToArray().Reverse().ToArray());  // correct order
+                        wantedSenderValue = new UInt160(wantedSenderValue.GetSpan().ToArray().Reverse().ToArray());  // correct order
                         // _params["sender"] = wantedSenderUInt160Reversed.ToString();  // big-endian
                     }
-                    if (wantedSenderUInt160 != tx.Sender)
+                    if (wantedSenderValue != tx.Sender)
                     {
                         foreach (Signer signer in tx.Signers)
-                            if (signer.Account == wantedSenderUInt160)
+                            if (signer.Account == wantedSenderValue)
                                 goto sendMessage;
                         continue;  // wanted sender not in tx.Sender or tx.Signers; do not send anything in websocket
                     }
@@ -253,15 +254,16 @@ namespace Neo.Plugins
                             if (_params["contract"] is not JString contractToken)
                                 continue;
                             string wantedContract = contractToken.AsString();
-                            if (!UInt160.TryParse(wantedContract, out UInt160 wantedContractUInt160))
+                            if (!UInt160.TryParse(wantedContract, out UInt160? wantedContractUInt160))
                                 continue;
+                            var wantedContractValue = wantedContractUInt160!;
                             if (!wantedContract.StartsWith("0x", StringComparison.InvariantCultureIgnoreCase))
                             {
                                 // little-endian; reverse the UInt160
-                                wantedContractUInt160 = new UInt160(wantedContractUInt160.GetSpan().ToArray().Reverse().ToArray());  // correct order
+                                wantedContractValue = new UInt160(wantedContractValue.GetSpan().ToArray().Reverse().ToArray());  // correct order
                                 // _params["contract"] = wantedSenderUInt160Reversed.ToString();  // big-endian
                             }
-                            if (wantedContractUInt160 != notification.ScriptHash)
+                            if (wantedContractValue != notification.ScriptHash)
                                 continue;
                         }
                         if (_params?.ContainsProperty("name") == true && _params["name"]?.AsString() != notification.EventName)
@@ -311,16 +313,17 @@ namespace Neo.Plugins
                         if (_params["container"] is not JString containerToken)
                             continue;
                         string wantedTxOrBlock = containerToken.AsString();
-                        if (!UInt256.TryParse(wantedTxOrBlock, out UInt256 wantedTxOrBlockUInt256))
+                        if (!UInt256.TryParse(wantedTxOrBlock, out UInt256? wantedTxOrBlockUInt256))
                             continue;
+                        var wantedTxOrBlockValue = wantedTxOrBlockUInt256!;
                         if (!wantedTxOrBlock.StartsWith("0x", StringComparison.InvariantCultureIgnoreCase))
                         {
                             // little-endian; reverse the UInt256
-                            wantedTxOrBlockUInt256 = new UInt256(wantedTxOrBlockUInt256.GetSpan().ToArray().Reverse().ToArray());  // correct order
+                            wantedTxOrBlockValue = new UInt256(wantedTxOrBlockValue.GetSpan().ToArray().Reverse().ToArray());  // correct order
                             // _params["contract"] = wantedSenderUInt160Reversed.ToString();  // big-endian
                         }
 
-                        if (wantedTxOrBlockUInt256 == block.Hash)
+                        if (wantedTxOrBlockValue == block.Hash)
                         {
                             subscriptionsToClose.Add(subscription);  // impossble to have another container of the same hash; remove subscription
                             if (_params.ContainsProperty("state") && _params["state"]!.AsString() != Enum.GetName(app.VMState))
@@ -328,7 +331,7 @@ namespace Neo.Plugins
                             else
                                 goto sendMessage;
                         }
-                        if (wantedTxOrBlockUInt256 == app.Transaction?.Hash)
+                        if (wantedTxOrBlockValue == app.Transaction?.Hash)
                         {
                             subscriptionsToClose.Add(subscription);  // impossble to have another container of the same hash; remove subscription
                             if (_params.ContainsProperty("state") && _params["state"]!.AsString() != Enum.GetName(app.VMState))

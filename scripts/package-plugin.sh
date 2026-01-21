@@ -20,13 +20,33 @@ done
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 OUT_DIR="$ROOT/src/Fairy.Plugin/bin/$CONFIG/net10.0"
+NEO_ROOT="${NEOROOT:-${NeoRoot:-}}"
+if [[ -z "$NEO_ROOT" ]]; then
+  if [[ -d "$ROOT/neo_csharp" ]]; then
+    NEO_ROOT="$ROOT/neo_csharp"
+  else
+    NEO_ROOT="$ROOT/../neo"
+  fi
+fi
 
 if [[ -z "$DEST" ]]; then
-  DEST="$ROOT/../neo/neo-cli/bin/$CONFIG/net10.0/Plugins/Fairy"
+  # Neo repo layout changed over time:
+  # - Old: <neo>/neo-cli/bin/<cfg>/net10.0
+  # - New: <neo>/bin/Neo.CLI/net10.0
+  # - Split: <neo_csharp>/node/src/Neo.CLI/bin/<cfg>/net10.0
+  if [[ -d "$NEO_ROOT/bin/Neo.CLI/net10.0" ]]; then
+    DEST="$NEO_ROOT/bin/Neo.CLI/net10.0/Plugins/Fairy"
+  elif [[ -d "$NEO_ROOT/neo-cli/bin/$CONFIG/net10.0" ]]; then
+    DEST="$NEO_ROOT/neo-cli/bin/$CONFIG/net10.0/Plugins/Fairy"
+  elif [[ -d "$NEO_ROOT/node/bin/Neo.CLI/net10.0" ]]; then
+    DEST="$NEO_ROOT/node/bin/Neo.CLI/net10.0/Plugins/Fairy"
+  else
+    DEST="$NEO_ROOT/node/src/Neo.CLI/bin/$CONFIG/net10.0/Plugins/Fairy"
+  fi
 fi
 
 echo "Building Fairy plugin ($CONFIG)..."
-dotnet build "$ROOT/src/Fairy.Plugin/Fairy.csproj" -c "$CONFIG" --nologo
+dotnet build "$ROOT/src/Fairy.Plugin/Fairy.csproj" -c "$CONFIG" --nologo -p:NeoRoot="$NEO_ROOT"
 
 echo "Copying artifacts to: $DEST"
 mkdir -p "$DEST"
