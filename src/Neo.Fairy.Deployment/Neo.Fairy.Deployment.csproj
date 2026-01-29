@@ -4,11 +4,11 @@
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <RootNamespace>Neo.Fairy.Testing</RootNamespace>
-    <AssemblyName>Neo.Fairy.Testing</AssemblyName>
+    <RootNamespace>Neo.Fairy.Deployment</RootNamespace>
+    <AssemblyName>Neo.Fairy.Deployment</AssemblyName>
     <Version>1.1.0</Version>
     <Authors>Neo Project</Authors>
-    <Description>Test framework for Neo Fairy - Foundry-style testing for Neo N3 smart contracts</Description>
+    <Description>Deployment and scripting helpers for Neo Fairy Framework</Description>
   </PropertyGroup>
 
   <ItemGroup>
@@ -17,3 +17,4 @@
   </ItemGroup>
 
 </Project>
+

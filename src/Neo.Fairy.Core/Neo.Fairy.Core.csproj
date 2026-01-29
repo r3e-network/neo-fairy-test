@@ -6,14 +6,14 @@
     <Nullable>enable</Nullable>
     <RootNamespace>Neo.Fairy.Core</RootNamespace>
     <AssemblyName>Neo.Fairy.Core</AssemblyName>
-    <Version>1.0.0</Version>
+    <Version>1.1.0</Version>
     <Authors>Neo Project</Authors>
     <Description>Core abstractions and models for Neo Fairy Framework</Description>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="Tomlyn" Version="0.19.0" />
-    <PackageReference Include="Neo" Version="3.9.0" />
+    <PackageReference Include="Neo" Version="3.9.1" />
   </ItemGroup>
 
 </Project>
