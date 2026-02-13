@@ -36,6 +36,8 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: "10.0.x"
+      - name: Exclude Fairy.Plugin (requires pre-built neo-cli)
+        run: dotnet sln Fairy.Full.sln remove src/Fairy.Plugin/Fairy.csproj
       - name: Restore
         env:
           NEOROOT: ${{ github.workspace }}/neo
