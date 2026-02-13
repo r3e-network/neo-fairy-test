@@ -120,7 +120,7 @@ namespace Neo.Plugins
             string pauseFileFullPath = System.IO.Path.Combine(RootPath, pauseFileName);
             if (File.Exists(pauseFileFullPath))
             {
-                StreamReader sr = new StreamReader(pauseFileFullPath);
+                using var sr = new StreamReader(pauseFileFullPath);
                 string? line = sr.ReadLine();
                 if (uint.TryParse(line, out uint blockIndex))
                     SyncUntilBlock = blockIndex;
@@ -140,7 +140,8 @@ namespace Neo.Plugins
             {
                 string error = $"""{DateTime.Now.ToString("yyyy-MM-dd h:mm:ss tt")} Block synchronization at index {block.Index} > {SyncUntilBlock} paused by fairy. Current block height {NativeContract.Ledger.CurrentIndex(system.StoreView)}. Execute `sync` in Neo.CLI to continue sync, or `sync 0` to pause sync. Reminding you again in {SleepTimeMs.Days}d {SleepTimeMs.Hours}h:{SleepTimeMs.Minutes}m:{SleepTimeMs.Seconds}.{SleepTimeMs.Milliseconds}s""";
                 ConsoleHelper.Warning(error);
-                CancelSyncSleep = new();
+                var oldCts = Interlocked.Exchange(ref CancelSyncSleep, new CancellationTokenSource());
+                oldCts?.Dispose();
                 CancelSyncSleep.Token.WaitHandle.WaitOne((int)SleepTimeMs.TotalMilliseconds);
             }
         }
@@ -149,7 +150,8 @@ namespace Neo.Plugins
         protected void OnFairySyncCommand(uint blockIndex = uint.MaxValue)
         {
             SyncUntilBlock = blockIndex;
-            CancelSyncSleep?.Cancel();
+            var cts = Volatile.Read(ref CancelSyncSleep);
+            try { cts?.Cancel(); } catch (ObjectDisposedException) { }
             ConsoleHelper.Info($"Sync until block {blockIndex}");
         }
 
@@ -177,7 +179,7 @@ namespace Neo.Plugins
                 ConsoleHelper.Info("☆ DebugInfo registration:");
                 if (fairy.contractScriptHashToSourceLineFilenames.Keys.Count > 0)
                 {
-                    Console.Error.WriteLine($"test snapshot\t\t\tcontract name\t\t\tscript hash");
+                    Console.WriteLine($"test snapshot\t\t\tcontract name\t\t\tscript hash");
                     foreach (UInt160 k in fairy.contractScriptHashToSourceLineFilenames.Keys)
                     {
                         string? contractName = null;
@@ -205,6 +207,20 @@ namespace Neo.Plugins
             }
             if (SyncUntilBlock < uint.MaxValue)
                 ConsoleHelper.Warning($"Fairy sync until block index {SyncUntilBlock}");
+        }
+
+        public override void Dispose()
+        {
+            Blockchain.Committing -= SyncControl;
+            var cts = Interlocked.Exchange(ref CancelSyncSleep, null);
+            try { cts?.Cancel(); } catch (ObjectDisposedException) { }
+            cts?.Dispose();
+            foreach (Fairy fairy in fairyServers)
+            {
+                fairy.websocketHost?.StopAsync().GetAwaiter().GetResult();
+                fairy.websocketHost?.Dispose();
+            }
+            base.Dispose();
         }
     }
 }

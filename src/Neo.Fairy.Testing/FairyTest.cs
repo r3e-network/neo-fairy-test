@@ -2,6 +2,7 @@
 // Licensed under the MIT License.
 
 using Neo.Fairy.Core.CodeGen;
+using Neo.Fairy.Core.Debugging;
 using Neo.Fairy.Core.Interfaces;
 using Neo.Fairy.Core.Models;
 using Neo.Fairy.Engine;
@@ -26,7 +27,12 @@ public abstract class FairyTest : IDisposable, IContractInvoker
     private IFairySession? _session;
     private FairyRpcClient? _rpcClient;
     private readonly Dictionary<string, string> _deployedContracts = new(StringComparer.OrdinalIgnoreCase);
+    private long _gasConsumed;
+    private bool _collectCoverage;
     private bool _disposed;
+
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, bool> DebugInfoRegistered =
+        new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
     /// Gets the current test session.
@@ -83,8 +89,7 @@ public abstract class FairyTest : IDisposable, IContractInvoker
             return existingHash;
         }
 
-        // This would call the actual deployment logic
-        // For now, return placeholder - actual implementation needs Fairy engine
+        // Deploy via Fairy RPC into the current test session.
         var hash = DeployInternal(alias);
         _deployedContracts[alias] = hash;
         return hash;
@@ -100,7 +105,7 @@ public abstract class FairyTest : IDisposable, IContractInvoker
     protected string DeployFromFiles(string nefPath, string manifestPath, string? alias = null)
     {
         alias ??= Path.GetFileNameWithoutExtension(nefPath);
-        // Implementation would load and deploy the contract
+        // Deploy explicit NEF+manifest into the current test session.
         var hash = DeployFromFilesInternal(nefPath, manifestPath);
         _deployedContracts[alias] = hash;
         return hash;
@@ -279,11 +284,46 @@ public abstract class FairyTest : IDisposable, IContractInvoker
     /// Initializes the test session with Fairy engine components.
     /// Called by TestRunner before each test.
     /// </summary>
-    internal void InitializeSession(IFairySession session, ICheatcodes cheatcodes, FairyRpcClient? rpcClient = null)
+    internal void InitializeSession(
+        IFairySession session,
+        ICheatcodes cheatcodes,
+        FairyRpcClient? rpcClient = null,
+        bool collectCoverage = false)
     {
         _session = session;
         Vm = cheatcodes;
         _rpcClient = rpcClient;
+        _gasConsumed = 0;
+        _collectCoverage = collectCoverage;
+        _deployedContracts.Clear();
+    }
+
+    /// <summary>
+    /// Clears the session reference without disposing it.
+    /// Used by TestRunner to prevent double-dispose when the runner owns the session lifetime.
+    /// </summary>
+    internal void ClearSession()
+    {
+        _session = null;
+    }
+
+    /// <summary>
+    /// Clears the static debug-info registration cache.
+    /// Called by TestRunner between assembly runs so contracts are re-registered.
+    /// </summary>
+    internal static void ClearDebugInfoCache()
+    {
+        DebugInfoRegistered.Clear();
+    }
+
+    internal void ResetGasCounter()
+    {
+        _gasConsumed = 0;
+    }
+
+    internal long GetGasConsumed()
+    {
+        return _gasConsumed;
     }
 
     private string DeployInternal(string alias)
@@ -366,8 +406,17 @@ public abstract class FairyTest : IDisposable, IContractInvoker
                 $"Deployment failed: {result.Exception ?? "Unknown error"}");
         }
 
+        _gasConsumed += result.GasConsumed;
+
         // Register the contract in session
-        _session.RegisterContract(Path.GetFileNameWithoutExtension(nefPath), result.ContractHash);
+        var alias = Path.GetFileNameWithoutExtension(nefPath);
+        _session.RegisterContract(alias, result.ContractHash);
+
+        if (_collectCoverage)
+        {
+            Coverage.CoverageRegistry.Register(result.ContractHash, alias);
+            TryRegisterDebugInfoForCoverage(result.ContractHash, nefPath);
+        }
 
         return result.ContractHash;
     }
@@ -376,6 +425,35 @@ public abstract class FairyTest : IDisposable, IContractInvoker
     {
         if (_rpcClient == null || _session == null)
             throw new InvalidOperationException("Session not initialized. Ensure test is run via TestRunner.");
+
+        // Check for mocked calls before hitting the RPC
+        if (Vm is FairyCheatcodes mockCheck)
+        {
+            var (isMocked, returnData, shouldRevert, revertMessage) = mockCheck.GetMock(contractHash, method);
+            if (isMocked)
+            {
+                if (shouldRevert)
+                {
+                    var faultResult = new ExecutionResult
+                    {
+                        State = ExecutionState.Fault,
+                        GasConsumed = 0,
+                        Exception = revertMessage ?? "Mocked revert"
+                    };
+                    mockCheck.ValidateExpectations(faultResult, contractHash, method);
+                    return faultResult;
+                }
+
+                var mockResult = new ExecutionResult
+                {
+                    State = ExecutionState.Halt,
+                    GasConsumed = 0,
+                    Stack = new[] { new StackItem { Type = "Any", Value = returnData } }
+                };
+                mockCheck.ValidateExpectations(mockResult, contractHash, method);
+                return mockResult;
+            }
+        }
 
         // Get prank account if set (for Vm.Prank support)
         IReadOnlyList<SignerInfo>? signers = null;
@@ -397,13 +475,89 @@ public abstract class FairyTest : IDisposable, IContractInvoker
             true, // writeSnapshot - persist state changes
             signers).GetAwaiter().GetResult();
 
-        // Validate expectations (ExpectRevert, ExpectEmit)
+        // Validate expectations (ExpectRevert, ExpectEmit, ExpectCall)
         if (Vm is FairyCheatcodes fc)
         {
-            fc.ValidateExpectations(result);
+            fc.ValidateExpectations(result, contractHash, method);
         }
 
+        _gasConsumed += result.GasConsumed;
+
         return result;
+    }
+
+    private void TryRegisterDebugInfoForCoverage(string contractHash, string nefPath)
+    {
+        if (_rpcClient == null)
+            return;
+
+        if (!DebugInfoRegistered.TryAdd(contractHash, true))
+            return;
+
+        var debugInfoPath = Path.ChangeExtension(nefPath, ".nefdbgnfo");
+        if (!File.Exists(debugInfoPath))
+        {
+            Log($"Coverage: debug info not found for {nefPath}. Build with --debug.");
+            return;
+        }
+
+        try
+        {
+            var dbgBytes = File.ReadAllBytes(debugInfoPath);
+
+            var dumpCandidates = new[]
+            {
+                Path.ChangeExtension(nefPath, ".nef.txt"),
+                Path.ChangeExtension(nefPath, ".nef.asm"),
+                Path.ChangeExtension(nefPath, ".asm")
+            };
+
+            var dumpPath = dumpCandidates.FirstOrDefault(File.Exists);
+            string dumpText;
+
+            if (dumpPath != null)
+            {
+                dumpText = File.ReadAllText(dumpPath);
+            }
+            else
+            {
+                var nefBytes = File.ReadAllBytes(nefPath);
+                if (!NefDumpGenerator.TryGenerateDumpNef(
+                        nefBytes,
+                        dbgBytes,
+                        Path.GetDirectoryName(nefPath),
+                        out dumpText,
+                        out var genError))
+                {
+                    Log($"Coverage: dumpnef text not found for {nefPath}. {genError ?? "Provide a .nef.txt/.nef.asm file."}");
+                    return;
+                }
+
+                // Cache the generated dump for tooling reuse.
+                try
+                {
+                    dumpPath = Path.ChangeExtension(nefPath, ".nef.txt");
+                    File.WriteAllText(dumpPath, dumpText);
+                }
+                catch
+                {
+                }
+            }
+
+            if (string.IsNullOrWhiteSpace(dumpText))
+            {
+                Log($"Coverage: dumpnef text at {dumpPath ?? nefPath} is empty.");
+                return;
+            }
+
+            _rpcClient.SetDebugInfoAsync(contractHash, dbgBytes, dumpText).GetAwaiter().GetResult();
+            _rpcClient.ClearContractOpCodeCoverageAsync(contractHash).GetAwaiter().GetResult();
+            Log($"Coverage: registered debug info for {contractHash}.");
+        }
+        catch (Exception ex)
+        {
+            Log($"Coverage: failed to register debug info: {ex.Message}");
+        }
     }
 
     private string GenerateAccountInternal()
@@ -425,6 +579,7 @@ public abstract class FairyTest : IDisposable, IContractInvoker
             if (disposing)
             {
                 _session?.Dispose();
+                _session = null;
                 _deployedContracts.Clear();
             }
             _disposed = true;
@@ -465,6 +620,24 @@ public sealed class AssertionFailedException : Exception
     public string? Actual { get; }
 
     public AssertionFailedException(string message, string? expected = null, string? actual = null)
+        : base(message)
+    {
+        Expected = expected;
+        Actual = actual;
+    }
+}
+
+/// <summary>
+/// Backward-compatible alias for <see cref="AssertionFailedException"/>.
+/// Use <see cref="AssertionFailedException"/> in new code.
+/// </summary>
+[Obsolete("Use AssertionFailedException instead. This alias corrects the original typo and will be removed in v2.0.")]
+public sealed class AssertionFailedExcepton : Exception
+{
+    public string? Expected { get; }
+    public string? Actual { get; }
+
+    public AssertionFailedExcepton(string message, string? expected = null, string? actual = null)
         : base(message)
     {
         Expected = expected;

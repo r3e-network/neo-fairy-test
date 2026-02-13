@@ -6,7 +6,7 @@
     <Nullable>enable</Nullable>
     <RootNamespace>Neo.Fairy.Core</RootNamespace>
     <AssemblyName>Neo.Fairy.Core</AssemblyName>
-    <Version>1.1.0</Version>
+    <Version>1.2.0</Version>
     <Authors>Neo Project</Authors>
     <Description>Core abstractions and models for Neo Fairy Framework</Description>
   </PropertyGroup>

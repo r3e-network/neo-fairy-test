@@ -1,15 +1,18 @@
 // Copyright (C) 2015-2025 The Neo Project.
 // Licensed under the MIT License.
 
+using System.Collections.Concurrent;
+
 namespace Neo.Fairy.Testing.Coverage;
 
 /// <summary>
 /// Collects code coverage data during test execution.
+/// Thread-safe: tests may run in parallel across classes.
 /// </summary>
 public sealed class CoverageCollector
 {
-    private readonly Dictionary<string, ContractCoverage> _contracts = new(StringComparer.OrdinalIgnoreCase);
-    private bool _isCollecting;
+    private readonly ConcurrentDictionary<string, ContractCoverage> _contracts = new(StringComparer.OrdinalIgnoreCase);
+    private volatile bool _isCollecting;
 
     /// <summary>
     /// Gets whether coverage collection is active.
@@ -109,25 +112,23 @@ public sealed class CoverageCollector
     /// </summary>
     public void Reset()
     {
+        _isCollecting = false;
         _contracts.Clear();
     }
 
     private ContractCoverage GetOrCreateContractCoverage(string contractHash)
     {
-        if (!_contracts.TryGetValue(contractHash, out var coverage))
-        {
-            coverage = new ContractCoverage { ContractHash = contractHash };
-            _contracts[contractHash] = coverage;
-        }
-        return coverage;
+        return _contracts.GetOrAdd(contractHash, key => new ContractCoverage { ContractHash = key });
     }
 }
 
 /// <summary>
 /// Coverage data for a single contract.
+/// Thread-safe: a single instance may be accessed from parallel test threads.
 /// </summary>
 public sealed class ContractCoverage
 {
+    private readonly object _lock = new();
     private readonly HashSet<int> _executedInstructions = new();
     private readonly Dictionary<string, HashSet<int>> _executedLines = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, int> _totalLines = new(StringComparer.OrdinalIgnoreCase);
@@ -143,22 +144,36 @@ public sealed class ContractCoverage
     /// </summary>
     public string? ContractName { get; set; }
 
+    private volatile int _totalInstructions;
+
     /// <summary>
     /// Gets or sets the total instruction count.
     /// </summary>
-    public int TotalInstructions { get; set; }
+    public int TotalInstructions
+    {
+        get => _totalInstructions;
+        set => _totalInstructions = value;
+    }
 
     /// <summary>
     /// Gets the number of executed instructions.
     /// </summary>
-    public int ExecutedInstructions => _executedInstructions.Count;
+    public int ExecutedInstructions { get { lock (_lock) return _executedInstructions.Count; } }
 
     /// <summary>
     /// Gets the instruction coverage percentage.
     /// </summary>
-    public double InstructionCoverage => TotalInstructions > 0
-        ? (double)ExecutedInstructions / TotalInstructions * 100
-        : 0;
+    public double InstructionCoverage
+    {
+        get
+        {
+            lock (_lock)
+            {
+                var total = _totalInstructions;
+                return total > 0 ? (double)_executedInstructions.Count / total * 100 : 0;
+            }
+        }
+    }
 
     /// <summary>
     /// Gets the line coverage by source file.
@@ -167,20 +182,23 @@ public sealed class ContractCoverage
     {
         get
         {
-            var result = new Dictionary<string, LineCoverage>();
-            foreach (var file in _executedLines.Keys.Union(_totalLines.Keys))
+            lock (_lock)
             {
-                var executed = _executedLines.TryGetValue(file, out var lines) ? lines.Count : 0;
-                var total = _totalLines.TryGetValue(file, out var t) ? t : 0;
-                result[file] = new LineCoverage
+                var result = new Dictionary<string, LineCoverage>();
+                foreach (var file in _executedLines.Keys.Union(_totalLines.Keys))
                 {
-                    SourceFile = file,
-                    ExecutedLines = executed,
-                    TotalLines = total,
-                    ExecutedLineNumbers = _executedLines.TryGetValue(file, out var nums) ? nums.ToList() : new()
-                };
+                    var executed = _executedLines.TryGetValue(file, out var lines) ? lines.Count : 0;
+                    var total = _totalLines.TryGetValue(file, out var t) ? t : 0;
+                    result[file] = new LineCoverage
+                    {
+                        SourceFile = file,
+                        ExecutedLines = executed,
+                        TotalLines = total,
+                        ExecutedLineNumbers = _executedLines.TryGetValue(file, out var nums) ? nums.ToList() : new()
+                    };
+                }
+                return result;
             }
-            return result;
         }
     }
 
@@ -191,9 +209,41 @@ public sealed class ContractCoverage
     {
         get
         {
-            var totalExecuted = _executedLines.Values.Sum(s => s.Count);
-            var totalLines = _totalLines.Values.Sum();
-            return totalLines > 0 ? (double)totalExecuted / totalLines * 100 : 0;
+            lock (_lock)
+            {
+                var totalExecuted = _executedLines.Values.Sum(s => s.Count);
+                var totalLines = _totalLines.Values.Sum();
+                return totalLines > 0 ? (double)totalExecuted / totalLines * 100 : 0;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Gets the total number of source lines tracked for this contract.
+    /// </summary>
+    public int TotalLineCount { get { lock (_lock) return _totalLines.Values.Sum(); } }
+
+    /// <summary>
+    /// Gets the total number of executed source lines for this contract.
+    /// </summary>
+    public int ExecutedLineCount { get { lock (_lock) return _executedLines.Values.Sum(s => s.Count); } }
+
+    /// <summary>
+    /// Gets the total number of branches tracked for this contract.
+    /// </summary>
+    public int TotalBranchCount { get { lock (_lock) return _branches.Count; } }
+
+    /// <summary>
+    /// Gets the number of fully covered branches (both taken and not-taken).
+    /// </summary>
+    public int CoveredBranchCount
+    {
+        get
+        {
+            lock (_lock)
+            {
+                return _branches.Count == 0 ? 0 : _branches.Values.Count(b => b.TakenCount > 0 && b.NotTakenCount > 0);
+            }
         }
     }
 
@@ -204,45 +254,54 @@ public sealed class ContractCoverage
     {
         get
         {
-            if (_branches.Count == 0) return 100;
-            var covered = _branches.Values.Count(b => b.TakenCount > 0 && b.NotTakenCount > 0);
-            return (double)covered / _branches.Count * 100;
+            lock (_lock)
+            {
+                if (_branches.Count == 0) return 0;
+                var covered = _branches.Values.Count(b => b.TakenCount > 0 && b.NotTakenCount > 0);
+                return (double)covered / _branches.Count * 100;
+            }
         }
     }
 
     internal void RecordInstruction(int instructionPointer, string opCode)
     {
-        _executedInstructions.Add(instructionPointer);
+        lock (_lock) _executedInstructions.Add(instructionPointer);
     }
 
     internal void RecordSourceLine(string sourceFile, int lineNumber)
     {
-        if (!_executedLines.TryGetValue(sourceFile, out var lines))
+        lock (_lock)
         {
-            lines = new HashSet<int>();
-            _executedLines[sourceFile] = lines;
+            if (!_executedLines.TryGetValue(sourceFile, out var lines))
+            {
+                lines = new HashSet<int>();
+                _executedLines[sourceFile] = lines;
+            }
+            lines.Add(lineNumber);
         }
-        lines.Add(lineNumber);
     }
 
     internal void RecordBranch(string branchId, bool taken)
     {
-        if (!_branches.TryGetValue(branchId, out var counts))
+        lock (_lock)
         {
-            counts = (0, 0);
+            if (!_branches.TryGetValue(branchId, out var counts))
+            {
+                counts = (0, 0);
+            }
+
+            if (taken)
+                counts = (counts.TakenCount + 1, counts.NotTakenCount);
+            else
+                counts = (counts.TakenCount, counts.NotTakenCount + 1);
+
+            _branches[branchId] = counts;
         }
-
-        if (taken)
-            counts = (counts.TakenCount + 1, counts.NotTakenCount);
-        else
-            counts = (counts.TakenCount, counts.NotTakenCount + 1);
-
-        _branches[branchId] = counts;
     }
 
     internal void SetTotalSourceLines(string sourceFile, int count)
     {
-        _totalLines[sourceFile] = count;
+        lock (_lock) _totalLines[sourceFile] = count;
     }
 }
 
@@ -268,38 +327,47 @@ public sealed class CoverageReport
     public required DateTime GeneratedAt { get; init; }
 
     /// <summary>
-    /// Gets the overall line coverage percentage.
+    /// Gets the overall line coverage percentage (weighted by line count per contract).
     /// </summary>
     public double OverallLineCoverage
     {
         get
         {
             if (Contracts.Count == 0) return 0;
-            return Contracts.Average(c => c.LineCoverage);
+            var totalLines = Contracts.Sum(c => c.TotalLineCount);
+            if (totalLines == 0) return 0;
+            var totalExecuted = Contracts.Sum(c => c.ExecutedLineCount);
+            return (double)totalExecuted / totalLines * 100;
         }
     }
 
     /// <summary>
-    /// Gets the overall instruction coverage percentage.
+    /// Gets the overall instruction coverage percentage (weighted by instruction count per contract).
     /// </summary>
     public double OverallInstructionCoverage
     {
         get
         {
             if (Contracts.Count == 0) return 0;
-            return Contracts.Average(c => c.InstructionCoverage);
+            var totalInstructions = Contracts.Sum(c => c.TotalInstructions);
+            if (totalInstructions == 0) return 0;
+            var totalExecuted = Contracts.Sum(c => c.ExecutedInstructions);
+            return (double)totalExecuted / totalInstructions * 100;
         }
     }
 
     /// <summary>
-    /// Gets the overall branch coverage percentage.
+    /// Gets the overall branch coverage percentage (weighted by branch count per contract).
     /// </summary>
     public double OverallBranchCoverage
     {
         get
         {
             if (Contracts.Count == 0) return 0;
-            return Contracts.Average(c => c.BranchCoverage);
+            var totalBranches = Contracts.Sum(c => c.TotalBranchCount);
+            if (totalBranches == 0) return 0;
+            var totalCovered = Contracts.Sum(c => c.CoveredBranchCount);
+            return (double)totalCovered / totalBranches * 100;
         }
     }
 }

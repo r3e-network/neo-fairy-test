@@ -2,6 +2,7 @@
 // Licensed under the MIT License.
 
 using System.CommandLine;
+using System.CommandLine.Invocation;
 using Neo.Fairy.Core.Models;
 using Spectre.Console;
 
@@ -43,12 +44,19 @@ public static class InitCommand
             noGitOption
         };
 
-        command.SetHandler(ExecuteAsync, nameArgument, templateOption, forceOption, noGitOption);
+        command.SetHandler(async (InvocationContext ctx) =>
+        {
+            ctx.ExitCode = await ExecuteAsync(
+                ctx.ParseResult.GetValueForArgument(nameArgument),
+                ctx.ParseResult.GetValueForOption(templateOption) ?? "default",
+                ctx.ParseResult.GetValueForOption(forceOption),
+                ctx.ParseResult.GetValueForOption(noGitOption));
+        });
 
         return command;
     }
 
-    private static async Task ExecuteAsync(
+    private static async Task<int> ExecuteAsync(
         string? name,
         string template,
         bool force,
@@ -62,6 +70,8 @@ public static class InitCommand
         {
             projectDir = currentDir;
             projectName = Path.GetFileName(currentDir);
+            if (string.IsNullOrEmpty(projectName))
+                projectName = "fairy-project";
         }
         else
         {
@@ -72,10 +82,10 @@ public static class InitCommand
         AnsiConsole.MarkupLine($"[green]Creating new Fairy project:[/] {projectName}");
 
         // Check if directory exists and has files
-        if (Directory.Exists(projectDir) && Directory.GetFiles(projectDir).Length > 0 && !force)
+        if (Directory.Exists(projectDir) && (Directory.GetFiles(projectDir).Length > 0 || Directory.GetDirectories(projectDir).Length > 0) && !force)
         {
             AnsiConsole.MarkupLine("[yellow]Directory is not empty. Use --force to overwrite.[/]");
-            return;
+            return 1;
         }
 
         await AnsiConsole.Status()
@@ -116,6 +126,8 @@ public static class InitCommand
         AnsiConsole.MarkupLine("  [white]fairy build[/]    - Compile contracts");
         AnsiConsole.MarkupLine("  [white]fairy test[/]     - Run tests");
         AnsiConsole.MarkupLine("  [white]fairy deploy[/]   - Deploy contracts");
+
+        return 0;
     }
 
     private static async Task CreateTemplateFilesAsync(FairyProject project, string template)

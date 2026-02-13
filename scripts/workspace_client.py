@@ -45,13 +45,25 @@ def load_json_or_file(value: str):
 
 
 def rpc(rpc_url: str, method: str, params):
-    payload = {"jsonrpc": "2.0", "method": method, "params": params, "id": 1}
-    resp = requests.post(rpc_url, json=payload, timeout=10)
-    resp.raise_for_status()
-    data = resp.json()
-    if "error" in data:
-        raise RuntimeError(f"RPC error {method}: {data['error']}")
-    return data["result"]
+    candidates = [method]
+    lower = method.lower()
+    if lower != method:
+        candidates.append(lower)
+
+    last_error = None
+    for m in candidates:
+        payload = {"jsonrpc": "2.0", "method": m, "params": params, "id": 1}
+        resp = requests.post(rpc_url, json=payload, timeout=10)
+        resp.raise_for_status()
+        data = resp.json()
+        if "error" in data:
+            last_error = data["error"]
+            if last_error.get("code") == -32601 and m != lower:
+                continue
+            raise RuntimeError(f"RPC error {m}: {last_error}")
+        return data["result"]
+
+    raise RuntimeError(f"RPC error {method}: {last_error}")
 
 
 def main():
@@ -91,7 +103,7 @@ def main():
     batch_calls = [load_json_or_file(item) for item in args.batch] if args.batch else None
 
     if args.set_gas:
-        print("SetGasBalance:", rpc(rpc_url, "SetGasBalance", [session, args.set_gas, 10_0000_0000]))
+        print("SetGasBalance:", rpc(rpc_url, "setGasBalance", [session, args.set_gas, 10_0000_0000]))
 
     print("UpsertWorkspaceContract...")
     upsert_params = [workspace, alias, nef_b64, json.dumps(manifest_json)]
@@ -102,18 +114,18 @@ def main():
         if data_param is None:
             upsert_params.append(None)
         upsert_params.append(signers)
-    print(rpc(rpc_url, "UpsertWorkspaceContract", upsert_params))
+    print(rpc(rpc_url, "upsertWorkspaceContract", upsert_params))
 
     if args.relay_deploy:
         print("RelayDeployWorkspace...")
         deploy_params = [workspace, None, [alias]]
         if signers is not None:
             deploy_params.append(signers)
-        print(rpc(rpc_url, "RelayDeployWorkspace", deploy_params))
+        print(rpc(rpc_url, "relayDeployWorkspace", deploy_params))
     else:
         print("VirtualDeployWorkspace...")
         deploy_params = [workspace, session, [alias]]
-        print(rpc(rpc_url, "VirtualDeployWorkspace", deploy_params))
+        print(rpc(rpc_url, "virtualDeployWorkspace", deploy_params))
 
     if batch_calls:
         if args.relay_invoke:
@@ -121,26 +133,26 @@ def main():
             invoke_params = [workspace, None, batch_calls]
             if invoke_signers is not None:
                 invoke_params.append(invoke_signers)
-            print(rpc(rpc_url, "RelayInvokeWorkspaceMany", invoke_params))
+            print(rpc(rpc_url, "relayInvokeWorkspaceMany", invoke_params))
         else:
             print("InvokeWorkspaceManyWithSession...")
             invoke_params = [workspace, session, True, batch_calls]
             if invoke_signers is not None:
                 invoke_params.append(invoke_signers)
-            print(rpc(rpc_url, "InvokeWorkspaceManyWithSession", invoke_params))
+            print(rpc(rpc_url, "invokeWorkspaceManyWithSession", invoke_params))
     elif args.operation:
         if args.relay_invoke:
             print("RelayInvokeWorkspaceFunction...")
             invoke_params = [workspace, alias, None, args.operation, invoke_args]
             if invoke_signers is not None:
                 invoke_params.append(invoke_signers)
-            print(rpc(rpc_url, "RelayInvokeWorkspaceFunction", invoke_params))
+            print(rpc(rpc_url, "relayInvokeWorkspaceFunction", invoke_params))
         else:
             print("InvokeWorkspaceFunctionWithSession...")
             invoke_params = [workspace, alias, session, True, args.operation, invoke_args]
             if invoke_signers is not None:
                 invoke_params.append(invoke_signers)
-            print(rpc(rpc_url, "InvokeWorkspaceFunctionWithSession", invoke_params))
+            print(rpc(rpc_url, "invokeWorkspaceFunctionWithSession", invoke_params))
     else:
         print("Invocation skipped (no --operation provided).")
 

@@ -2,6 +2,7 @@
 // Licensed under the MIT License.
 
 using System.Text;
+using System.Text.Json;
 
 namespace Neo.Fairy.Testing.Coverage;
 
@@ -24,7 +25,8 @@ public static class CoverageReporter
 
         foreach (var contract in report.Contracts)
         {
-            var name = contract.ContractName ?? contract.ContractHash[..10] + "...";
+            var name = contract.ContractName
+                ?? (contract.ContractHash.Length > 10 ? contract.ContractHash[..10] + "..." : contract.ContractHash);
             sb.AppendLine($"Contract: {name}");
             sb.AppendLine($"  Lines:        {contract.LineCoverage:F1}%");
             sb.AppendLine($"  Instructions: {contract.InstructionCoverage:F1}%");
@@ -165,52 +167,35 @@ public static class CoverageReporter
     /// </summary>
     public static string GenerateJson(CoverageReport report)
     {
-        var sb = new StringBuilder();
-
-        sb.AppendLine("{");
-        sb.AppendLine($"  \"generatedAt\": \"{report.GeneratedAt:O}\",");
-        sb.AppendLine($"  \"overallLineCoverage\": {report.OverallLineCoverage:F2},");
-        sb.AppendLine($"  \"overallInstructionCoverage\": {report.OverallInstructionCoverage:F2},");
-        sb.AppendLine($"  \"overallBranchCoverage\": {report.OverallBranchCoverage:F2},");
-        sb.AppendLine("  \"contracts\": [");
-
-        for (int i = 0; i < report.Contracts.Count; i++)
+        var data = new
         {
-            var contract = report.Contracts[i];
-            var comma = i < report.Contracts.Count - 1 ? "," : "";
-
-            sb.AppendLine("    {");
-            sb.AppendLine($"      \"hash\": \"{EscapeJson(contract.ContractHash)}\",");
-            sb.AppendLine($"      \"name\": {(contract.ContractName != null ? $"\"{EscapeJson(contract.ContractName)}\"" : "null")},");
-            sb.AppendLine($"      \"lineCoverage\": {contract.LineCoverage:F2},");
-            sb.AppendLine($"      \"instructionCoverage\": {contract.InstructionCoverage:F2},");
-            sb.AppendLine($"      \"branchCoverage\": {contract.BranchCoverage:F2},");
-            sb.AppendLine($"      \"executedInstructions\": {contract.ExecutedInstructions},");
-            sb.AppendLine($"      \"totalInstructions\": {contract.TotalInstructions},");
-            sb.AppendLine("      \"files\": [");
-
-            var files = contract.LineCoverageByFile.ToList();
-            for (int j = 0; j < files.Count; j++)
+            generatedAt = report.GeneratedAt,
+            overallLineCoverage = Math.Round(report.OverallLineCoverage, 2),
+            overallInstructionCoverage = Math.Round(report.OverallInstructionCoverage, 2),
+            overallBranchCoverage = Math.Round(report.OverallBranchCoverage, 2),
+            contracts = report.Contracts.Select(c => new
             {
-                var (file, coverage) = files[j];
-                var fileComma = j < files.Count - 1 ? "," : "";
+                hash = c.ContractHash,
+                name = c.ContractName,
+                lineCoverage = Math.Round(c.LineCoverage, 2),
+                instructionCoverage = Math.Round(c.InstructionCoverage, 2),
+                branchCoverage = Math.Round(c.BranchCoverage, 2),
+                executedInstructions = c.ExecutedInstructions,
+                totalInstructions = c.TotalInstructions,
+                files = c.LineCoverageByFile.Select(f => new
+                {
+                    path = f.Key,
+                    executedLines = f.Value.ExecutedLines,
+                    totalLines = f.Value.TotalLines,
+                    coverage = Math.Round(f.Value.Percentage, 2)
+                }).ToArray()
+            }).ToArray()
+        };
 
-                sb.AppendLine("        {");
-                sb.AppendLine($"          \"path\": \"{EscapeJson(file)}\",");
-                sb.AppendLine($"          \"executedLines\": {coverage.ExecutedLines},");
-                sb.AppendLine($"          \"totalLines\": {coverage.TotalLines},");
-                sb.AppendLine($"          \"coverage\": {coverage.Percentage:F2}");
-                sb.AppendLine($"        }}{fileComma}");
-            }
-
-            sb.AppendLine("      ]");
-            sb.AppendLine($"    }}{comma}");
-        }
-
-        sb.AppendLine("  ]");
-        sb.AppendLine("}");
-
-        return sb.ToString();
+        return JsonSerializer.Serialize(data, new JsonSerializerOptions
+        {
+            WriteIndented = true
+        });
     }
 
     /// <summary>
@@ -233,16 +218,7 @@ public static class CoverageReporter
             .Replace("&", "&amp;")
             .Replace("<", "&lt;")
             .Replace(">", "&gt;")
-            .Replace("\"", "&quot;");
-    }
-
-    private static string EscapeJson(string text)
-    {
-        return text
-            .Replace("\\", "\\\\")
-            .Replace("\"", "\\\"")
-            .Replace("\n", "\\n")
-            .Replace("\r", "\\r")
-            .Replace("\t", "\\t");
+            .Replace("\"", "&quot;")
+            .Replace("'", "&#39;");
     }
 }

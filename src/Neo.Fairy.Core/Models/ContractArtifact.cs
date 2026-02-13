@@ -2,6 +2,11 @@
 // Licensed under the MIT License.
 
 using Neo.Fairy.Core.Interfaces;
+using System.Buffers.Binary;
+using System.Numerics;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
 
 namespace Neo.Fairy.Core.Models;
 
@@ -68,9 +73,21 @@ public sealed record ContractArtifact
     /// <returns>The predicted contract hash.</returns>
     public string GetPredictedHash(string senderHash)
     {
-        // This would use Neo's Helper.GetContractHash algorithm
-        // For now, return placeholder - actual implementation needs Neo references
-        throw new NotImplementedException("Requires Neo.SmartContract.Helper reference");
+        if (string.IsNullOrWhiteSpace(senderHash))
+            throw new ArgumentException("Sender hash is required.", nameof(senderHash));
+
+        var senderBytes = ParseUInt160(senderHash);
+
+        var script = new List<byte>(1 + 1 + 20 + 1 + 32);
+        script.Add(0x38); // ABORT
+
+        EmitPush(script, senderBytes);
+        EmitPush(script, new BigInteger(NefChecksum));
+        EmitPush(script, Name);
+
+        var hash160 = Hash160(script.ToArray());
+        Array.Reverse(hash160); // UInt160 string form is big-endian
+        return "0x" + Convert.ToHexString(hash160).ToLowerInvariant();
     }
 
     /// <summary>
@@ -135,27 +152,149 @@ public sealed record ContractArtifact
 
     private static string ExtractNameFromManifest(string manifestJson)
     {
-        // Simple JSON parsing for name field
-        // In production, use System.Text.Json
-        var nameStart = manifestJson.IndexOf("\"name\"", StringComparison.Ordinal);
-        if (nameStart < 0) return "Unknown";
+        try
+        {
+            using var doc = JsonDocument.Parse(manifestJson);
+            if (doc.RootElement.TryGetProperty("name", out var nameProp))
+            {
+                return nameProp.GetString() ?? "Unknown";
+            }
+        }
+        catch (JsonException)
+        {
+            // Malformed manifest; fall through to default.
+        }
 
-        var colonPos = manifestJson.IndexOf(':', nameStart);
-        var quoteStart = manifestJson.IndexOf('"', colonPos + 1);
-        var quoteEnd = manifestJson.IndexOf('"', quoteStart + 1);
-
-        return manifestJson.Substring(quoteStart + 1, quoteEnd - quoteStart - 1);
+        return "Unknown";
     }
 
     private static uint CalculateChecksum(byte[] data)
     {
-        // Simplified checksum - actual implementation uses Neo's checksum algorithm
-        uint checksum = 0;
-        foreach (var b in data)
+        if (data.Length <= sizeof(uint))
+            return 0;
+
+        var span = data.AsSpan(0, data.Length - sizeof(uint));
+        var hash = Hash256(span);
+        return BinaryPrimitives.ReadUInt32LittleEndian(hash);
+    }
+
+    private static byte[] ParseUInt160(string value)
+    {
+        var trimmed = value.StartsWith("0x", StringComparison.OrdinalIgnoreCase)
+            ? value[2..]
+            : value;
+
+        if (trimmed.Length != 40)
+            throw new FormatException($"Invalid UInt160 length: {value}");
+
+        var bytes = Convert.FromHexString(trimmed);
+        Array.Reverse(bytes); // Neo internal UInt160 is little-endian
+        return bytes;
+    }
+
+    private static void EmitPush(List<byte> script, ReadOnlySpan<byte> data)
+    {
+        if (data.Length < 0x100)
         {
-            checksum = (checksum << 1) | (checksum >> 31);
-            checksum ^= b;
+            script.Add(0x0C); // PUSHDATA1
+            script.Add((byte)data.Length);
         }
-        return checksum;
+        else if (data.Length < 0x10000)
+        {
+            script.Add(0x0D); // PUSHDATA2
+            script.AddRange(BitConverter.GetBytes((ushort)data.Length));
+        }
+        else
+        {
+            script.Add(0x0E); // PUSHDATA4
+            script.AddRange(BitConverter.GetBytes(data.Length));
+        }
+
+        script.AddRange(data.ToArray());
+    }
+
+    private static void EmitPush(List<byte> script, BigInteger value)
+    {
+        if (value >= -1 && value <= 16)
+        {
+            script.Add((byte)(0x10 + (int)value)); // PUSH0 + value
+            return;
+        }
+
+        Span<byte> buffer = stackalloc byte[32];
+        if (!value.TryWriteBytes(buffer, out var bytesWritten, isUnsigned: false, isBigEndian: false))
+            throw new ArgumentOutOfRangeException(nameof(value));
+
+        byte[] operand;
+        byte opcode;
+        bool negative = value.Sign < 0;
+
+        switch (bytesWritten)
+        {
+            case 1:
+                opcode = 0x00; // PUSHINT8
+                operand = PadRight(buffer, bytesWritten, 1, negative);
+                break;
+            case 2:
+                opcode = 0x01; // PUSHINT16
+                operand = PadRight(buffer, bytesWritten, 2, negative);
+                break;
+            case <= 4:
+                opcode = 0x02; // PUSHINT32
+                operand = PadRight(buffer, bytesWritten, 4, negative);
+                break;
+            case <= 8:
+                opcode = 0x03; // PUSHINT64
+                operand = PadRight(buffer, bytesWritten, 8, negative);
+                break;
+            case <= 16:
+                opcode = 0x04; // PUSHINT128
+                operand = PadRight(buffer, bytesWritten, 16, negative);
+                break;
+            case <= 32:
+                opcode = 0x05; // PUSHINT256
+                operand = PadRight(buffer, bytesWritten, 32, negative);
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(value), "Invalid BigInteger size.");
+        }
+
+        script.Add(opcode);
+        script.AddRange(operand);
+    }
+
+    private static void EmitPush(List<byte> script, string value)
+    {
+        EmitPush(script, Encoding.UTF8.GetBytes(value));
+    }
+
+    private static byte[] PadRight(Span<byte> buffer, int dataLength, int padLength, bool negative)
+    {
+        byte pad = negative ? (byte)0xff : (byte)0;
+        var result = new byte[padLength];
+        buffer[..dataLength].CopyTo(result);
+        for (int x = dataLength; x < padLength; x++)
+            result[x] = pad;
+        return result;
+    }
+
+    private static byte[] Hash256(ReadOnlySpan<byte> data)
+    {
+        using var sha = SHA256.Create();
+        var first = sha.ComputeHash(data.ToArray());
+        var second = sha.ComputeHash(first);
+        return second;
+    }
+
+    private static byte[] Hash160(ReadOnlySpan<byte> data)
+    {
+        using var sha = SHA256.Create();
+        var hash256 = sha.ComputeHash(data.ToArray());
+#pragma warning disable SYSLIB0045
+        using var ripemd = HashAlgorithm.Create("RIPEMD160");
+#pragma warning restore SYSLIB0045
+        if (ripemd == null)
+            throw new PlatformNotSupportedException("RIPEMD160 is not available on this platform.");
+        return ripemd.ComputeHash(hash256);
     }
 }

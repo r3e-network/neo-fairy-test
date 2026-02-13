@@ -304,7 +304,14 @@ public sealed class Assert
         // Verify arguments
         if (expectedArgs.Length > 0)
         {
-            for (int i = 0; i < expectedArgs.Length && i < notification.State.Count; i++)
+            if (expectedArgs.Length > notification.State.Count)
+            {
+                throw new AssertionFailedException(
+                    $"Event '{eventName}' has {notification.State.Count} arguments but expected {expectedArgs.Length}",
+                    expectedArgs.Length.ToString(),
+                    notification.State.Count.ToString());
+            }
+            for (int i = 0; i < expectedArgs.Length; i++)
             {
                 var expected = expectedArgs[i];
                 var actual = notification.State[i].Value;
@@ -385,10 +392,11 @@ public sealed class Assert
     /// </summary>
     public void Empty<T>(IEnumerable<T> collection, string? message = null)
     {
-        if (collection.Any())
+        var materialized = collection as ICollection<T> ?? collection.ToList();
+        if (materialized.Count > 0)
         {
             throw new AssertionFailedException(
-                message ?? $"Expected empty collection but had {collection.Count()} items");
+                message ?? $"Expected empty collection but had {materialized.Count} items");
         }
     }
 
@@ -424,7 +432,7 @@ public sealed class Assert
         // Handle string comparisons
         if (expected is string expectedStr && actual is string actualStr)
         {
-            return string.Equals(expectedStr, actualStr, StringComparison.OrdinalIgnoreCase);
+            return string.Equals(expectedStr, actualStr, StringComparison.Ordinal);
         }
 
         return expected.Equals(actual);

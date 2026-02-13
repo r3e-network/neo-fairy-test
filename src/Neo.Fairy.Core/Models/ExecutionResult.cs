@@ -56,6 +56,11 @@ public sealed class ExecutionResult
     public long? NetworkFee { get; init; }
 
     /// <summary>
+    /// Gets any additional notes about the execution (e.g., pending multisig signature).
+    /// </summary>
+    public string? Note { get; init; }
+
+    /// <summary>
     /// Gets the system fee (same as GasConsumed for virtual execution).
     /// </summary>
     public long SystemFee => GasConsumed;

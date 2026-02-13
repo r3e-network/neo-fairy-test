@@ -29,23 +29,19 @@ namespace Neo.Plugins
             //    string? contractName = NativeContract.ContractManagement.GetContract(system.StoreView, scriptHash)?.Manifest.Name;
             //    throw new ArgumentException($"Scripthash {scriptHash} {contractName} not registered for debugging. Call SetDebugInfo(scriptHash, nefDbgNfo, dumpNef) first");
             //}
-            HashSet<uint>? assemblyBreakpoints;
-            if (!contractScriptHashToAssemblyBreakpoints.TryGetValue(scriptHash, out assemblyBreakpoints))
-            {
-                assemblyBreakpoints = new HashSet<uint>();
-                contractScriptHashToAssemblyBreakpoints[scriptHash] = assemblyBreakpoints;
-            }
+            var assemblyBreakpoints = contractScriptHashToAssemblyBreakpoints.GetOrAdd(scriptHash, _ => new HashSet<uint>());
             JObject json = new();
             for (int i = 1; i < _params.Count; i++)
             {
                 string breakpointInstructionPointerStr = _params[i]!.AsString();
-                uint breakpointInstructionPointer = uint.Parse(breakpointInstructionPointerStr);
+                if (!uint.TryParse(breakpointInstructionPointerStr, out uint breakpointInstructionPointer))
+                    throw new ArgumentException($"Invalid instruction pointer: {_params[i]}");
                 if (contractScriptHashToInstructionPointerToOpCode.TryGetValue(scriptHash, out Dictionary<uint, VM.OpCode>? instructionPointerToOpCode))
                     // A contract that has registered debuginfo
                     if (!instructionPointerToOpCode.ContainsKey(breakpointInstructionPointer))
                         throw new ArgumentException($"No instruction at InstructionPointer={breakpointInstructionPointer}");
-                // TODO: we can check whether the addr is valid, without the debuginfo and instructionPointerToOpCode
-                // else this is a contract without debug info registration. Do nothing.
+                // For contracts without debug info: breakpoint address validation is skipped.
+                // Future enhancement: validate address against NEF script length.
                 json[breakpointInstructionPointerStr] = assemblyBreakpoints.Add(breakpointInstructionPointer);
             }
             return json;
@@ -60,7 +56,9 @@ namespace Neo.Plugins
                 string? contractName = NativeContract.ContractManagement.GetContract(system.StoreView, scriptHash)?.Manifest.Name;
                 throw new ArgumentException($"Scripthash {scriptHash} {contractName} not registered for debugging. Call SetDebugInfo(scriptHash, nefDbgNfo, dumpNef) first");
             }
-            List<uint> assemblyBreakpoints = contractScriptHashToAssemblyBreakpoints[scriptHash].ToList();
+            if (!contractScriptHashToAssemblyBreakpoints.TryGetValue(scriptHash, out var bps))
+                return new JArray();
+            List<uint> assemblyBreakpoints = bps.ToList();
             assemblyBreakpoints.Sort();
             JArray breakpointList = [.. assemblyBreakpoints];
             return breakpointList;
@@ -90,7 +88,8 @@ namespace Neo.Plugins
                 for (int i = 1; i < _params.Count; i++)
                 {
                     string breakpointInstructionPointerStr = _params[i]!.AsString();
-                    uint breakpointInstructionPointer = uint.Parse(breakpointInstructionPointerStr);
+                    if (!uint.TryParse(breakpointInstructionPointerStr, out uint breakpointInstructionPointer))
+                        throw new ArgumentException($"Invalid instruction pointer: {_params[i]}");
                     json[breakpointInstructionPointerStr] = assemblyBreakpointsSet.Remove(breakpointInstructionPointer);
                 }
             return json;
@@ -105,19 +104,15 @@ namespace Neo.Plugins
                 string? contractName = NativeContract.ContractManagement.GetContract(system.StoreView, scriptHash)?.Manifest.Name;
                 throw new ArgumentException($"Scripthash {scriptHash} {contractName} not registered for debugging. Call SetDebugInfo(scriptHash, nefDbgNfo, dumpNef) first");
             }
-            HashSet<SourceFilenameAndLineNum>? sourceCodeBreakpoints;
-            if (!contractScriptHashToSourceCodeBreakpoints.TryGetValue(scriptHash, out sourceCodeBreakpoints))
-            {
-                sourceCodeBreakpoints = new HashSet<SourceFilenameAndLineNum>();
-                contractScriptHashToSourceCodeBreakpoints[scriptHash] = sourceCodeBreakpoints;
-            }
+            var sourceCodeBreakpoints = contractScriptHashToSourceCodeBreakpoints.GetOrAdd(scriptHash, _ => new HashSet<SourceFilenameAndLineNum>());
             JArray breakpointList = new();
             int i = 1;
             while (_params.Count > i)
             {
                 string sourceCodeFilename = _params[i]!.AsString();
                 i++;
-                uint sourceCodeBreakpointLineNum = uint.Parse(_params[i]!.AsString());
+                if (!uint.TryParse(_params[i]!.AsString(), out uint sourceCodeBreakpointLineNum))
+                    throw new ArgumentException($"Invalid line number: {_params[i]}");
                 i++;
                 JObject json = new();
                 SourceFilenameAndLineNum breakpoint = new SourceFilenameAndLineNum { sourceFilename = sourceCodeFilename, lineNum = sourceCodeBreakpointLineNum };
@@ -189,7 +184,8 @@ namespace Neo.Plugins
                 {
                     string sourceCodeBreakpointFilename = _params[i]!.AsString();
                     i++;
-                    uint sourceCodeBreakpointLineNum = uint.Parse(_params[i]!.AsString());
+                    if (!uint.TryParse(_params[i]!.AsString(), out uint sourceCodeBreakpointLineNum))
+                        throw new ArgumentException($"Invalid line number: {_params[i]}");
                     i++;
                     if (sourceCodeBreakpoints.Remove(new SourceFilenameAndLineNum { sourceFilename = sourceCodeBreakpointFilename, lineNum = sourceCodeBreakpointLineNum }))
                     {

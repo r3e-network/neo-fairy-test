@@ -2,6 +2,7 @@
 // Licensed under the MIT License.
 
 using System.CommandLine;
+using System.CommandLine.Invocation;
 using System.Diagnostics;
 using Neo.Fairy.Cli.Services;
 using Neo.Fairy.Core.Configuration;
@@ -48,12 +49,20 @@ public static class BuildCommand
             noGenOption
         };
 
-        command.SetHandler(ExecuteAsync, contractOption, forceOption, debugOption, optimizeOption, noGenOption);
+        command.SetHandler(async (InvocationContext ctx) =>
+        {
+            ctx.ExitCode = await ExecuteAsync(
+                ctx.ParseResult.GetValueForOption(contractOption),
+                ctx.ParseResult.GetValueForOption(forceOption),
+                ctx.ParseResult.GetValueForOption(debugOption),
+                ctx.ParseResult.GetValueForOption(optimizeOption),
+                ctx.ParseResult.GetValueForOption(noGenOption));
+        });
 
         return command;
     }
 
-    private static async Task ExecuteAsync(
+    private static async Task<int> ExecuteAsync(
         string? contractAlias,
         bool force,
         bool debug,
@@ -68,7 +77,7 @@ public static class BuildCommand
         catch (InvalidOperationException ex)
         {
             AnsiConsole.MarkupLine($"[red]Error:[/] {ex.Message}");
-            return;
+            return 1;
         }
 
         var contracts = project.Config.Contracts;
@@ -81,14 +90,14 @@ public static class BuildCommand
             if (contracts.Count == 0)
             {
                 AnsiConsole.MarkupLine($"[red]Error:[/] Contract '{contractAlias}' not found in fairy.toml");
-                return;
+                return 1;
             }
         }
 
         AnsiConsole.MarkupLine($"[green]Compiling {contracts.Count} contract(s)...[/]");
 
         var stopwatch = Stopwatch.StartNew();
-        var results = new List<(string Name, bool Success, string? Error, long Size)>();
+        var results = new List<(string Name, bool Success, string? Error, long Size, bool Skipped)>();
 
         await AnsiConsole.Progress()
             .StartAsync(async ctx =>
@@ -98,21 +107,30 @@ public static class BuildCommand
                 foreach (var contract in contracts)
                 {
                     var sourcePath = Path.Combine(project.RootDirectory, contract.Path);
+                    var nefPath = Path.Combine(project.OutputDirectory, $"{contract.Name}.nef");
 
                     if (!File.Exists(sourcePath))
                     {
-                        results.Add((contract.Name, false, $"Source file not found: {contract.Path}", 0));
+                        results.Add((contract.Name, false, $"Source file not found: {contract.Path}", 0, false));
                         task.Increment(1);
                         continue;
                     }
 
-                    var (success, error, size) = await CompileContractAsync(
-                        project,
-                        contract,
-                        debug,
-                        optimize);
+                    if (!force && File.Exists(nefPath))
+                    {
+                        var sourceTime = File.GetLastWriteTimeUtc(sourcePath);
+                        var nefTime = File.GetLastWriteTimeUtc(nefPath);
+                        if (nefTime >= sourceTime)
+                        {
+                            results.Add((contract.Name, true, null, new FileInfo(nefPath).Length, true));
+                            task.Increment(1);
+                            continue;
+                        }
+                    }
 
-                    results.Add((contract.Name, success, error, size));
+                    var (success, error, size) = await CompileContractAsync(project, contract, debug, optimize);
+
+                    results.Add((contract.Name, success, error, size, false));
                     task.Increment(1);
                 }
             });
@@ -121,12 +139,13 @@ public static class BuildCommand
 
         // Display results
         AnsiConsole.WriteLine();
-        foreach (var (name, success, error, size) in results)
+        foreach (var (name, success, error, size, skipped) in results)
         {
             if (success)
             {
                 var sizeKb = size / 1024.0;
-                AnsiConsole.MarkupLine($"  [green][[✓]][/] {name} → out/{name}.nef ({sizeKb:F1}kb)");
+                var suffix = skipped ? " (up-to-date)" : string.Empty;
+                AnsiConsole.MarkupLine($"  [green][[✓]][/] {name} → out/{name}.nef ({sizeKb:F1}kb){suffix}");
             }
             else
             {
@@ -174,6 +193,8 @@ public static class BuildCommand
                 AnsiConsole.MarkupLine($"[green]✓ Generated {genSuccessCount} contract interface(s)[/]");
             }
         }
+
+        return failCount == 0 ? 0 : 1;
     }
 
     private static async Task<(bool Success, string? Error, long Size)> CompileContractAsync(

@@ -6,7 +6,7 @@
     <Nullable>enable</Nullable>
     <RootNamespace>Neo.Fairy.Deployment</RootNamespace>
     <AssemblyName>Neo.Fairy.Deployment</AssemblyName>
-    <Version>1.1.0</Version>
+    <Version>1.2.0</Version>
     <Authors>Neo Project</Authors>
     <Description>Deployment and scripting helpers for Neo Fairy Framework</Description>
   </PropertyGroup>

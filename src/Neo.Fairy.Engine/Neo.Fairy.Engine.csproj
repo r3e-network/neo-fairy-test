@@ -6,7 +6,7 @@
     <Nullable>enable</Nullable>
     <RootNamespace>Neo.Fairy.Engine</RootNamespace>
     <AssemblyName>Neo.Fairy.Engine</AssemblyName>
-    <Version>1.1.0</Version>
+    <Version>1.2.0</Version>
     <Authors>Neo Project</Authors>
     <Description>Execution engine for Neo Fairy Framework - VM execution with runtime overrides</Description>
   </PropertyGroup>

@@ -31,13 +31,28 @@ SESSION = "smoke-session"
 
 
 def rpc(method, params):
-    payload = {"jsonrpc": "2.0", "method": method, "params": params, "id": 1}
-    resp = requests.post(RPC_URL, json=payload, timeout=5)
-    resp.raise_for_status()
-    data = resp.json()
-    if "error" in data:
-        raise RuntimeError(f"RPC error {method}: {data['error']}")
-    return data["result"]
+    candidates = [method]
+    lower = method.lower()
+    if lower != method:
+        candidates.append(lower)
+
+    last_error = None
+    for m in candidates:
+        payload = {"jsonrpc": "2.0", "method": m, "params": params, "id": 1}
+        resp = requests.post(RPC_URL, json=payload, timeout=5)
+        resp.raise_for_status()
+        data = resp.json()
+
+        if "error" in data:
+            last_error = data["error"]
+            # Retry with lowercase if server expects all-lowercase method names.
+            if last_error.get("code") == -32601 and m != lower:
+                continue
+            raise RuntimeError(f"RPC error {m}: {last_error}")
+
+        return data.get("result")
+
+    raise RuntimeError(f"RPC error {method}: {last_error}")
 
 
 async def ws_subscribe():
@@ -63,16 +78,16 @@ async def ws_subscribe():
 
 
 def main():
-    print("HelloFairy:", rpc("HelloFairy", []))
+    print("HelloFairy:", rpc("helloFairy", []))
     dummy_hash = "0xd2a4cff31913016155e38e474a2c06d08be276cf"  # GAS hash, just for a harmless call
     account = "Nf2NECZk8ahGkq8zUzYoEtKFUfRyXnZot5"  # any valid address; not used for real signing
-    print("SetGasBalance:", rpc("SetGasBalance", [SESSION, account, 10_0000_0000]))
+    print("SetGasBalance:", rpc("setGasBalance", [SESSION, account, 10_0000_0000]))
 
     # Empty script invoke (Base64 of 0x40 RET)
     script_b64 = base64.b64encode(bytes.fromhex("40")).decode()
     print(
         "InvokeScriptWithSession:",
-        rpc("InvokeScriptWithSession", [SESSION, True, script_b64, None, None]),
+        rpc("invokeScriptWithSession", [SESSION, True, script_b64, None, None]),
     )
     asyncio.run(ws_subscribe())
 

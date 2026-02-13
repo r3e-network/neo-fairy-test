@@ -55,28 +55,28 @@ namespace Neo.Plugins
         {
             foreach (MethodInfo method in handler.GetType().GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance))
             {
-                WebsocketNeoGoCompatibleMethodAttribute attribute = method.GetCustomAttribute<WebsocketNeoGoCompatibleMethodAttribute>()!;
+                WebsocketNeoGoCompatibleMethodAttribute? attribute = method.GetCustomAttribute<WebsocketNeoGoCompatibleMethodAttribute>();
                 if (attribute is null) continue;
                 string name = string.IsNullOrEmpty(attribute.Name) ? method.Name.ToLowerInvariant() : attribute.Name;
                 webSocketNeoGoCompatibleMethods[name] = method.CreateDelegate<Func<WebSocket, JArray, object>>(handler);
             }
             foreach (MethodInfo method in handler.GetType().GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance))
             {
-                WebsocketMethodAttribute attribute = method.GetCustomAttribute<WebsocketMethodAttribute>()!;
+                WebsocketMethodAttribute? attribute = method.GetCustomAttribute<WebsocketMethodAttribute>();
                 if (attribute is null) continue;
                 string name = string.IsNullOrEmpty(attribute.Name) ? method.Name.ToLowerInvariant() : attribute.Name;
                 webSocketMethods[name] = method.CreateDelegate<Func<WebSocket, JArray, CancellationToken, object>>(handler);
             }
             foreach (MethodInfo method in handler.GetType().GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance))
             {
-                WebsocketControlMethodAttribute attribute = method.GetCustomAttribute<WebsocketControlMethodAttribute>()!;
+                WebsocketControlMethodAttribute? attribute = method.GetCustomAttribute<WebsocketControlMethodAttribute>();
                 if (attribute is null) continue;
                 string name = string.IsNullOrEmpty(attribute.Name) ? method.Name.ToLowerInvariant() : attribute.Name;
                 webSocketControlMethods[name] = method.CreateDelegate<Func<WebSocket, JArray, LinkedList<object>, object>>(handler);
             }
             foreach (MethodInfo method in handler.GetType().GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance))
             {
-                FairyRpcMethodAttribute attribute = method.GetCustomAttribute<FairyRpcMethodAttribute>()!;
+                FairyRpcMethodAttribute? attribute = method.GetCustomAttribute<FairyRpcMethodAttribute>();
                 if (attribute is null) continue;
                 string name = string.IsNullOrEmpty(attribute.Name) ? method.Name.ToLowerInvariant() : attribute.Name;
                 FairyRpcMethods[name] = method.CreateDelegate<Func<JArray, object>>(handler);
@@ -150,115 +150,160 @@ namespace Neo.Plugins
             context.Response.Headers["Access-Control-Max-Age"] = "31536000";
             using WebSocket webSocket = await context.WebSockets.AcceptWebSocketAsync();
             byte[] buffer = new byte[4 * 1024];
+            var cancellationToken = context.RequestAborted;
 
             LinkedList<object> webSocketSubscriptions = new();
 
-            while (true)
+            try
             {
-                WebSocketReceiveResult wsResult = await webSocket.ReceiveAsync(new ArraySegment<byte>(buffer), CancellationToken.None);//ToDo built in CancellationToken
-                if (wsResult.MessageType == WebSocketMessageType.Close)
+                while (!cancellationToken.IsCancellationRequested)
                 {
-                    await webSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, null, CancellationToken.None);
-                    break;
-                }
+                    WebSocketReceiveResult wsResult = await webSocket.ReceiveAsync(new ArraySegment<byte>(buffer), cancellationToken);
+                    if (wsResult.MessageType == WebSocketMessageType.Close)
+                    {
+                        await webSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, null, CancellationToken.None);
+                        break;
+                    }
 
-                JToken request;
-                using (MemoryStream stream = new MemoryStream())  // MemoryStream has an internal capacity limit 2147483591 < 2**31
-                {
-                    stream.Write(buffer, 0, wsResult.Count);
-                    while (!wsResult.EndOfMessage)
+                    JToken request;
+                    using (MemoryStream stream = new MemoryStream())  // MemoryStream has an internal capacity limit 2147483591 < 2**31
                     {
-                        wsResult = await webSocket.ReceiveAsync(new ArraySegment<byte>(buffer), CancellationToken.None);  //TODO: CancellationToken
                         stream.Write(buffer, 0, wsResult.Count);
+                        while (!wsResult.EndOfMessage)
+                        {
+                            wsResult = await webSocket.ReceiveAsync(new ArraySegment<byte>(buffer), cancellationToken);
+                            stream.Write(buffer, 0, wsResult.Count);
+                        }
+                        stream.Seek(0, SeekOrigin.Begin);
+                        using (StreamReader reader = new StreamReader(stream))
+                        {
+                            request = JObject.Parse(await reader.ReadToEndAsync())!;
+                        }
                     }
-                    stream.Seek(0, SeekOrigin.Begin);
-                    using (StreamReader reader = new StreamReader(stream))
+
+                    try
                     {
-                        request = JObject.Parse(await reader.ReadToEndAsync())!;
-                    }
-                }
-                string method = request["method"]!.AsString();
-                if (/*!CheckAuth(context) || */settings.DisabledMethods.Contains(method))
-                    throw new RpcException(RpcError.MethodNotFound.WithData("Method disabled by server settings"));
-                JToken @params = request["params"] ?? new JArray();
-                if (webSocketNeoGoCompatibleMethods.TryGetValue(method, out var wsFuncNeoGoCompatible))
-                {
-                    JObject response = new();
-                    response["jsonrpc"] = "2.0";
-                    response["id"] = (string)context.Request.Query["id"]!;
-                    switch (wsFuncNeoGoCompatible(webSocket, (JArray)@params))
-                    {
-                        case uint subscriptionId:
-                            webSocketSubscriptions.AddLast(idToSubscriptions[subscriptionId]);
-                            response["result"] = subscriptionId.ToString("x");
-                            await webSocket.SendAsync(response.ToByteArray(false), WebSocketMessageType.Text, true, CancellationToken.None);
-                            break;
-                        case bool unsubscribeResult:
-                            response["result"] = unsubscribeResult;
-                            await webSocket.SendAsync(response.ToByteArray(false), WebSocketMessageType.Text, true, CancellationToken.None);
-                            break;
-                        default:
-                            throw new NotSupportedException();
-                    }
-                    ;
-                }
-                else if (webSocketMethods.TryGetValue(method, out var wsFunc))
-                {
-                    CancellationTokenSource cancellationTokenSource = new CancellationTokenSource();
-                    CancellationToken cancellationToken = cancellationTokenSource.Token;
-                    switch (wsFunc(webSocket, (JArray)@params, cancellationToken))
-                    {
-                        case Action action:
-                            _ = Task.Run(action);
-                            webSocketSubscriptions.AddLast(new WebSocketSubscription { method = method, @params = @params, cancellationTokenSource = cancellationTokenSource });
+                        var methodToken = request["method"];
+                        if (methodToken is null)
+                        {
+                            JObject errResp = new();
+                            errResp["jsonrpc"] = "2.0";
+                            errResp["id"] = request["id"]?.AsString();
+                            errResp["error"] = new JObject
+                            {
+                                ["code"] = -32600,
+                                ["message"] = "Missing 'method' field"
+                            };
+                            await webSocket.SendAsync(errResp.ToByteArray(false), WebSocketMessageType.Text, true, CancellationToken.None);
+                            continue;
+                        }
+                        string method = methodToken.AsString();
+                        string requestId = request["id"]?.AsString() ?? context.Request.Query["id"].ToString() ?? "1";
+                        if (/*!CheckAuth(context) || */settings.DisabledMethods.Contains(method))
+                            throw new RpcException(RpcError.MethodNotFound.WithData("Method disabled by server settings"));
+                        JToken @params = request["params"] ?? new JArray();
+                        if (webSocketNeoGoCompatibleMethods.TryGetValue(method, out var wsFuncNeoGoCompatible))
+                        {
+                            JObject response = new();
+                            response["jsonrpc"] = "2.0";
+                            response["id"] = requestId;
+                            switch (wsFuncNeoGoCompatible(webSocket, (JArray)@params))
+                            {
+                                case uint subscriptionId:
+                                    webSocketSubscriptions.AddLast(idToSubscriptions[subscriptionId]);
+                                    response["result"] = subscriptionId.ToString("x");
+                                    await webSocket.SendAsync(response.ToByteArray(false), WebSocketMessageType.Text, true, CancellationToken.None);
+                                    break;
+                                case bool unsubscribeResult:
+                                    response["result"] = unsubscribeResult;
+                                    await webSocket.SendAsync(response.ToByteArray(false), WebSocketMessageType.Text, true, CancellationToken.None);
+                                    break;
+                                default:
+                                    throw new NotSupportedException();
+                            }
+                        }
+                        else if (webSocketMethods.TryGetValue(method, out var wsFunc))
+                        {
+                            CancellationTokenSource subscriptionCts = new CancellationTokenSource();
+                            CancellationToken subscriptionToken = subscriptionCts.Token;
+                            switch (wsFunc(webSocket, (JArray)@params, subscriptionToken))
+                            {
+                                case Action action:
+                                    _ = Task.Run(action);
+                                    webSocketSubscriptions.AddLast(new WebSocketSubscription { method = method, @params = @params, cancellationTokenSource = subscriptionCts });
+                                    if (request["needresponse"]?.AsBoolean() is true)
+                                    {
+                                        JObject response = new();
+                                        response["jsonrpc"] = "2.0";
+                                        response["id"] = requestId;
+                                        response["result"] = method;
+                                        await webSocket.SendAsync(response.ToByteArray(false), WebSocketMessageType.Text, true, CancellationToken.None);
+                                    }
+                                    break;
+                                case JToken result:
+                                    await webSocket.SendAsync(result.ToByteArray(false), WebSocketMessageType.Text, true, CancellationToken.None);
+                                    break;
+                                default:
+                                    throw new NotSupportedException();
+                            }
+                        }
+                        else if (webSocketControlMethods.TryGetValue(method, out var controlFunc))
+                        {
+                            switch (controlFunc(webSocket, (JArray)@params, webSocketSubscriptions))
+                            {
+                                case JToken result:
+                                    await webSocket.SendAsync(result.ToByteArray(false), WebSocketMessageType.Text, true, CancellationToken.None);
+                                    break;
+                                default:
+                                    throw new NotSupportedException();
+                            }
+                        }
+                        else if (FairyRpcMethods.TryGetValue(method, out var rpcFunc))
+                        {
+                            object rpcResult = rpcFunc((JArray)@params);
                             if (request["needresponse"]?.AsBoolean() is true)
                             {
                                 JObject response = new();
                                 response["jsonrpc"] = "2.0";
-                                response["id"] = (string)context.Request.Query["id"]!;
-                                response["result"] = method;
+                                response["id"] = requestId;
+                                response["result"] = rpcResult switch
+                                {
+                                    JToken result => result,
+                                    Task<JToken> task => await task,
+                                    _ => throw new NotSupportedException()
+                                };
                                 await webSocket.SendAsync(response.ToByteArray(false), WebSocketMessageType.Text, true, CancellationToken.None);
                             }
-                            break;
-                        case JToken result:
-                            await webSocket.SendAsync(result.ToByteArray(false), WebSocketMessageType.Text, true, CancellationToken.None);
-                            break;
-                        default:
-                            throw new NotSupportedException();
+                        }
+                        else
+                            throw new RpcException(RpcError.MethodNotFound.WithData("Method not found"));
                     }
-                    ;
-                }
-                else if (webSocketControlMethods.TryGetValue(method, out var controlFunc))
-                {
-                    switch (controlFunc(webSocket, (JArray)@params, webSocketSubscriptions))
+                    catch (Exception ex)
                     {
-                        case JToken result:
-                            await webSocket.SendAsync(result.ToByteArray(false), WebSocketMessageType.Text, true, CancellationToken.None);
-                            break;
-                        default:
-                            throw new NotSupportedException();
-                    }
-                    ;
-                }
-                else if (FairyRpcMethods.TryGetValue(method, out var rpcFunc))
-                {
-                    object rpcResult = rpcFunc((JArray)@params);
-                    if (request["needresponse"]?.AsBoolean() is true)
-                    {
-                        JObject response = new();
-                        response["jsonrpc"] = "2.0";
-                        response["id"] = (string)context.Request.Query["id"]!;
-                        response["result"] = rpcResult switch
+                        JObject errorResponse = new();
+                        errorResponse["jsonrpc"] = "2.0";
+                        errorResponse["id"] = request["id"]?.AsString();
+                        errorResponse["error"] = new JObject
                         {
-                            JToken result => result,
-                            Task<JToken> task => await task,
-                            _ => throw new NotSupportedException()
+                            ["code"] = -32603,
+                            ["message"] = $"Internal error: {ex.Message}"
                         };
-                        await webSocket.SendAsync(response.ToByteArray(false), WebSocketMessageType.Text, true, CancellationToken.None);
+                        await webSocket.SendAsync(errorResponse.ToByteArray(false), WebSocketMessageType.Text, true, CancellationToken.None);
                     }
                 }
-                else
-                    throw new RpcException(RpcError.MethodNotFound.WithData("Method not found"));
+            }
+            finally
+            {
+                // Dispose all subscription CancellationTokenSources on connection close
+                foreach (object sub in webSocketSubscriptions)
+                {
+                    if (sub is WebSocketSubscription wsSub)
+                    {
+                        wsSub.cancellationTokenSource.Cancel();
+                        wsSub.cancellationTokenSource.Dispose();
+                    }
+                }
+                webSocketSubscriptions.Clear();
             }
         }
     }

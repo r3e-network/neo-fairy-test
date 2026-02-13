@@ -7,7 +7,7 @@
     <Nullable>enable</Nullable>
     <RootNamespace>Neo.Fairy.Cli</RootNamespace>
     <AssemblyName>fairy</AssemblyName>
-    <Version>1.1.0</Version>
+    <Version>1.2.0</Version>
     <Authors>Neo Project</Authors>
     <Description>CLI tool for Neo Fairy Framework - Professional Neo N3 smart contract development</Description>
     <PackAsTool>true</PackAsTool>

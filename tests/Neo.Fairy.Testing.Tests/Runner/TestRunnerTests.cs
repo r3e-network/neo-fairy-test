@@ -3,6 +3,7 @@
 
 using FluentAssertions;
 using Neo.Fairy.Core.Models;
+using Neo.Fairy.Testing;
 using Neo.Fairy.Testing.Runner;
 using Xunit;
 
@@ -20,7 +21,7 @@ public class TestRunnerOptionsTests
         options.FailFast.Should().BeFalse();
         options.FuzzRuns.Should().Be(256);
         options.FuzzSeed.Should().BeNull();
-        options.Verbosity.Should().Be(2);
+        options.Verbosity.Should().Be(TestDefaults.DefaultVerbosity);
         options.CollectCoverage.Should().BeFalse();
         options.OnTestCompleted.Should().BeNull();
     }

@@ -6,7 +6,7 @@
     <Nullable>enable</Nullable>
     <RootNamespace>Neo.Fairy.Testing</RootNamespace>
     <AssemblyName>Neo.Fairy.Testing</AssemblyName>
-    <Version>1.1.0</Version>
+    <Version>1.2.0</Version>
     <Authors>Neo Project</Authors>
     <Description>Test framework for Neo Fairy - Foundry-style testing for Neo N3 smart contracts</Description>
   </PropertyGroup>

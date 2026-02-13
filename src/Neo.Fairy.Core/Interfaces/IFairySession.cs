@@ -30,6 +30,16 @@ public interface IFairySession : IDisposable
     bool CheckWitnessReturnTrue { get; set; }
 
     /// <summary>
+    /// Gets or sets the block index override for this session.
+    /// </summary>
+    uint? BlockIndex { get; set; }
+
+    /// <summary>
+    /// Gets or sets the network magic number for this session.
+    /// </summary>
+    uint? NetworkMagic { get; set; }
+
+    /// <summary>
     /// Creates a snapshot of the current session state.
     /// </summary>
     /// <returns>A snapshot identifier that can be used to restore state.</returns>
