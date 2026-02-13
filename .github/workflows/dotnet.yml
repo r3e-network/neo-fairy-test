@@ -49,7 +49,7 @@ jobs:
       - name: Test
         env:
           NEOROOT: ${{ github.workspace }}/neo
-        run: dotnet test Fairy.Full.sln --no-build --verbosity normal
+        run: dotnet test Fairy.Full.sln --no-build -c Release --verbosity normal
 
   smoke-e2e:
     if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.run-e2e == 'true' }}
