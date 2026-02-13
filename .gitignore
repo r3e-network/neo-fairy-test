@@ -4,4 +4,6 @@
 examples/**/out/
 /.claude-flow/
 /.hive-mind/
-TestResult*
+TestResult*.xml
+TestResult*.trx
+TestResult*.html
