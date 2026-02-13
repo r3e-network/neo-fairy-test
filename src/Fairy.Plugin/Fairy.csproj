@@ -25,18 +25,11 @@
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
 
-  <!-- Prefer the layout used in the merged neo repo relative to repo root -->
+  <!-- Merged neo repo layout -->
   <ItemGroup Condition="Exists('$(NeoRoot)/src/Neo.ConsoleService/Neo.ConsoleService.csproj')">
     <ProjectReference Include="$(NeoRoot)/src/Neo.ConsoleService/Neo.ConsoleService.csproj" />
     <ProjectReference Include="$(NeoRoot)/src/Neo.Json/Neo.Json.csproj" />
     <ProjectReference Include="$(NeoRoot)/src/Plugins/RpcServer/RpcServer.csproj" />
-  </ItemGroup>
-
-  <!-- Split neo_csharp layout (core + node) -->
-  <ItemGroup Condition="Exists('$(NeoRoot)/core/src/Neo.Json/Neo.Json.csproj') and Exists('$(NeoRoot)/node/src/Neo.ConsoleService/Neo.ConsoleService.csproj')">
-    <ProjectReference Include="$(NeoRoot)/core/src/Neo.Json/Neo.Json.csproj" />
-    <ProjectReference Include="$(NeoRoot)/node/src/Neo.ConsoleService/Neo.ConsoleService.csproj" />
-    <ProjectReference Include="$(NeoRoot)/node/plugins/RpcServer/RpcServer.csproj" />
   </ItemGroup>
 
   <!-- Fallback: reference built Neo binaries (Neo.CLI + RpcServer plugin). -->

@@ -52,21 +52,21 @@ Neo Fairy is a Neo N3 RpcServer plugin for fast, repeatable contract testing, si
 
 ## Architecture
 
-| Module | Description |
-|--------|-------------|
-| `Neo.Fairy.Core` | Shared abstractions, models, and configuration |
-| `Neo.Fairy.Engine` | RPC client and execution adapters |
-| `Neo.Fairy.Testing` | Test framework with assertions and cheatcodes |
-| `Neo.Fairy.Deployment` | Deployment scripting and contract management |
-| `Neo.Fairy.Cli` | Command-line interface (`fairy` commands) |
-| `Fairy.Plugin` | Neo RpcServer plugin for neo-cli |
+| Module                 | Description                                    |
+| ---------------------- | ---------------------------------------------- |
+| `Neo.Fairy.Core`       | Shared abstractions, models, and configuration |
+| `Neo.Fairy.Engine`     | RPC client and execution adapters              |
+| `Neo.Fairy.Testing`    | Test framework with assertions and cheatcodes  |
+| `Neo.Fairy.Deployment` | Deployment scripting and contract management   |
+| `Neo.Fairy.Cli`        | Command-line interface (`fairy` commands)      |
+| `Fairy.Plugin`         | Neo RpcServer plugin for neo-cli               |
 
 ## Quickstart
 
 ### Prerequisites
 
 - .NET SDK 10.0.x (pinned via `global.json`)
-- Neo source checkout (defaults to `./neo_csharp` if present, or `../neo`; override with `NEOROOT`)
+- Neo source checkout (defaults to `../neo`; override with `NEOROOT`)
 
 ### Installation
 
@@ -86,7 +86,7 @@ dotnet test Fairy.Full.sln
 
 ```bash
 # Start neo-cli with Fairy (auto-builds + installs the plugin)
-# Requires a Neo repo checkout (set NEOROOT if not ./neo_csharp or ../neo)
+# Requires a Neo repo checkout (set NEOROOT if not ../neo)
 fairy node start --network mainnet --host 127.0.0.1 --port 16868
 
 # Verify it's working (in another terminal)
@@ -140,29 +140,29 @@ public class CounterTest : FairyTest
 
 ### Cheatcodes Reference
 
-| Cheatcode | Description |
-|-----------|-------------|
-| `Vm.Prank(account)` | Set caller for next call |
-| `Vm.StartPrank(account)` | Set caller for all subsequent calls |
-| `Vm.StopPrank()` | Stop ongoing prank |
-| `Vm.Deal(account, amount)` | Set GAS balance |
-| `Vm.DealNeo(account, amount)` | Set NEO balance |
-| `Vm.DealToken(token, account, amount)` | Set NEP-17 token balance |
-| `Vm.Warp(timestamp)` | Set block timestamp (milliseconds) |
-| `Vm.Skip(seconds)` | Skip forward in time |
-| `Vm.Rewind(seconds)` | Rewind time backward |
-| `Vm.Roll(blockNumber)` | Set block number |
-| `Vm.SetRandom(value)` | Set Runtime.GetRandom value |
-| `Vm.AssumeWitness()` | Make all witness checks pass |
-| `Vm.RestoreWitness()` | Restore normal witness checking |
-| `Vm.ExpectRevert()` | Expect next call to revert |
-| `Vm.ExpectRevert(message)` | Expect revert with specific message |
-| `Vm.ExpectEmit(eventName)` | Expect event to be emitted |
-| `Vm.Snapshot()` | Create state snapshot |
-| `Vm.RevertTo(id)` | Revert to snapshot |
-| `Vm.Assume(condition)` | Skip fuzz run if condition is false |
-| `Vm.Bound(value, min, max)` | Bound fuzz value to range |
-| `Vm.Label(account, label)` | Label address for trace output |
+| Cheatcode                              | Description                         |
+| -------------------------------------- | ----------------------------------- |
+| `Vm.Prank(account)`                    | Set caller for next call            |
+| `Vm.StartPrank(account)`               | Set caller for all subsequent calls |
+| `Vm.StopPrank()`                       | Stop ongoing prank                  |
+| `Vm.Deal(account, amount)`             | Set GAS balance                     |
+| `Vm.DealNeo(account, amount)`          | Set NEO balance                     |
+| `Vm.DealToken(token, account, amount)` | Set NEP-17 token balance            |
+| `Vm.Warp(timestamp)`                   | Set block timestamp (milliseconds)  |
+| `Vm.Skip(seconds)`                     | Skip forward in time                |
+| `Vm.Rewind(seconds)`                   | Rewind time backward                |
+| `Vm.Roll(blockNumber)`                 | Set block number                    |
+| `Vm.SetRandom(value)`                  | Set Runtime.GetRandom value         |
+| `Vm.AssumeWitness()`                   | Make all witness checks pass        |
+| `Vm.RestoreWitness()`                  | Restore normal witness checking     |
+| `Vm.ExpectRevert()`                    | Expect next call to revert          |
+| `Vm.ExpectRevert(message)`             | Expect revert with specific message |
+| `Vm.ExpectEmit(eventName)`             | Expect event to be emitted          |
+| `Vm.Snapshot()`                        | Create state snapshot               |
+| `Vm.RevertTo(id)`                      | Revert to snapshot                  |
+| `Vm.Assume(condition)`                 | Skip fuzz run if condition is false |
+| `Vm.Bound(value, min, max)`            | Bound fuzz value to range           |
+| `Vm.Label(account, label)`             | Label address for trace output      |
 
 ### CLI Usage
 
@@ -215,7 +215,7 @@ fairy workspace hashes --workspace neo-dex
 fairy workspace clear neo-dex token --yes
 
 # Start a local neo-cli + Fairy RPC (anvil-style)
-# Requires a Neo repo checkout (set NEOROOT if not ./neo_csharp or ../neo)
+# Requires a Neo repo checkout (set NEOROOT if not ../neo)
 fairy node start --network mainnet --host 127.0.0.1 --port 16868
 
 # If you already have neo-cli built somewhere, you can point directly at it:

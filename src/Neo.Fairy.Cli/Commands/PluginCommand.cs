@@ -28,7 +28,7 @@ public static class PluginCommand
     {
         var neoRootOption = new Option<string?>(
             name: "--neo-root",
-            description: "Path to Neo repo root (defaults to NEOROOT/NeoRoot, or auto-detected via ../neo_csharp or ../neo).");
+            description: "Path to Neo repo root (defaults to NEOROOT/NeoRoot, or auto-detected via ../neo).");
 
         var neoCliOption = new Option<string?>(
             name: "--neo-cli",
@@ -94,7 +94,7 @@ public static class PluginCommand
     {
         var neoRootOption = new Option<string?>(
             name: "--neo-root",
-            description: "Path to Neo repo root (defaults to NEOROOT/NeoRoot, or auto-detected via ../neo_csharp or ../neo).");
+            description: "Path to Neo repo root (defaults to NEOROOT/NeoRoot, or auto-detected via ../neo).");
 
         var neoCliOption = new Option<string?>(
             name: "--neo-cli",
@@ -121,7 +121,7 @@ public static class PluginCommand
     {
         var neoRootOption = new Option<string?>(
             name: "--neo-root",
-            description: "Path to Neo repo root (defaults to NEOROOT/NeoRoot, or auto-detected via ../neo_csharp or ../neo).");
+            description: "Path to Neo repo root (defaults to NEOROOT/NeoRoot, or auto-detected via ../neo).");
 
         var neoCliOption = new Option<string?>(
             name: "--neo-cli",

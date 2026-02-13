@@ -33,15 +33,6 @@ jobs:
       - name: Checkout neo (for project references)
         if: steps.cache-neo.outputs.cache-hit != 'true'
         run: git clone --depth 1 --recurse-submodules https://github.com/neo-project/neo neo
-      - name: Create neo_csharp symlink layout
-        run: |
-          mkdir -p neo_csharp/core/src neo_csharp/node/src neo_csharp/node/plugins
-          ln -s "$GITHUB_WORKSPACE/neo/src/Neo.Json" neo_csharp/core/src/Neo.Json
-          ln -s "$GITHUB_WORKSPACE/neo/src/Neo" neo_csharp/core/src/Neo
-          ln -s "$GITHUB_WORKSPACE/neo/src/Neo.Extensions" neo_csharp/core/src/Neo.Extensions
-          ln -s "$GITHUB_WORKSPACE/neo/src/Neo.IO" neo_csharp/core/src/Neo.IO
-          ln -s "$GITHUB_WORKSPACE/neo/src/Neo.ConsoleService" neo_csharp/node/src/Neo.ConsoleService
-          ln -s "$GITHUB_WORKSPACE/neo/src/Plugins/RpcServer" neo_csharp/node/plugins/RpcServer
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: "10.0.x"
@@ -79,15 +70,6 @@ jobs:
       - name: Checkout neo (for project references)
         if: steps.cache-neo.outputs.cache-hit != 'true'
         run: git clone --depth 1 --recurse-submodules https://github.com/neo-project/neo neo
-      - name: Create neo_csharp symlink layout
-        run: |
-          mkdir -p neo_csharp/core/src neo_csharp/node/src neo_csharp/node/plugins
-          ln -s "$GITHUB_WORKSPACE/neo/src/Neo.Json" neo_csharp/core/src/Neo.Json
-          ln -s "$GITHUB_WORKSPACE/neo/src/Neo" neo_csharp/core/src/Neo
-          ln -s "$GITHUB_WORKSPACE/neo/src/Neo.Extensions" neo_csharp/core/src/Neo.Extensions
-          ln -s "$GITHUB_WORKSPACE/neo/src/Neo.IO" neo_csharp/core/src/Neo.IO
-          ln -s "$GITHUB_WORKSPACE/neo/src/Neo.ConsoleService" neo_csharp/node/src/Neo.ConsoleService
-          ln -s "$GITHUB_WORKSPACE/neo/src/Plugins/RpcServer" neo_csharp/node/plugins/RpcServer
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: "10.0.x"

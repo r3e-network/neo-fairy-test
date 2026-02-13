@@ -4,11 +4,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 NEO_ROOT="${NEOROOT:-${NeoRoot:-}}"
 if [[ -z "$NEO_ROOT" ]]; then
-  if [[ -d "$ROOT/neo_csharp" ]]; then
-    NEO_ROOT="$ROOT/neo_csharp"
-  else
-    NEO_ROOT="$ROOT/../neo"
-  fi
+  NEO_ROOT="$ROOT/../neo"
 fi
 
 echo "Checking Neo root at: $NEO_ROOT"

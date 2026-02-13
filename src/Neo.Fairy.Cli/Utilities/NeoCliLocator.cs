@@ -88,12 +88,6 @@ internal static class NeoCliLocator
 
         startDirectory ??= Directory.GetCurrentDirectory();
 
-        var directNeoCsharp = Path.GetFullPath(Path.Combine(startDirectory, "neo_csharp"));
-        if (IsNeoRoot(directNeoCsharp)) return directNeoCsharp;
-
-        var parentNeoCsharp = Path.GetFullPath(Path.Combine(startDirectory, "..", "neo_csharp"));
-        if (IsNeoRoot(parentNeoCsharp)) return parentNeoCsharp;
-
         var direct = Path.GetFullPath(Path.Combine(startDirectory, "..", "neo"));
         if (IsNeoRoot(direct)) return direct;
 
@@ -102,9 +96,6 @@ internal static class NeoCliLocator
         {
             var parent = Directory.GetParent(dir);
             if (parent == null) break;
-
-            var siblingNeoCsharp = Path.Combine(parent.FullName, "neo_csharp");
-            if (IsNeoRoot(siblingNeoCsharp)) return siblingNeoCsharp;
 
             var sibling = Path.Combine(parent.FullName, "neo");
             if (IsNeoRoot(sibling)) return sibling;

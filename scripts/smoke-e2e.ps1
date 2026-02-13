@@ -10,12 +10,7 @@ $root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 $neoRoot = $env:NEOROOT
 if (-not $neoRoot -or $neoRoot -eq "") { $neoRoot = $env:NeoRoot }
 if (-not $neoRoot -or $neoRoot -eq "") {
-    $candidate = Join-Path $root "neo_csharp"
-    if (Test-Path $candidate) {
-        $neoRoot = $candidate
-    } else {
-        $neoRoot = Join-Path $root "..\\neo"
-    }
+    $neoRoot = Join-Path $root "..\\neo"
 }
 
 $neoCliCandidates = @(

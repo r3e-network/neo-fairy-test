@@ -8,12 +8,7 @@ if (-not $neoRoot -or $neoRoot -eq "") {
     $neoRoot = $env:NeoRoot
 }
 if (-not $neoRoot -or $neoRoot -eq "") {
-    $candidate = Join-Path $root "neo_csharp"
-    if (Test-Path $candidate) {
-        $neoRoot = $candidate
-    } else {
-        $neoRoot = Join-Path $root "..\\neo"
-    }
+    $neoRoot = Join-Path $root "..\\neo"
 }
 
 Write-Host "Checking Neo root at: $neoRoot"

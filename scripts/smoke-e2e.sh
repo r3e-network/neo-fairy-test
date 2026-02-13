@@ -14,18 +14,13 @@ LOG_PATH="${LOG_PATH:-/tmp/neo-cli.log}"
 
 NEO_ROOT="${NEOROOT:-${NeoRoot:-}}"
 if [[ -z "$NEO_ROOT" ]]; then
-  if [[ -d "$ROOT/neo_csharp" ]]; then
-    NEO_ROOT="$ROOT/neo_csharp"
-  else
-    NEO_ROOT="$ROOT/../neo"
-  fi
+  NEO_ROOT="$ROOT/../neo"
 fi
 NEO_CLI=""
 
 # Neo repo layout changed over time:
 # - Old: <neo>/neo-cli/bin/<cfg>/net10.0/neo-cli.dll
 # - New: <neo>/bin/Neo.CLI/net10.0/neo-cli.dll
-# - Split: <neo_csharp>/node/src/Neo.CLI/bin/<cfg>/net10.0/neo-cli.dll
 NEO_CLI_CANDIDATES=(
   "$NEO_ROOT/bin/Neo.CLI/net10.0/neo-cli.dll"
   "$NEO_ROOT/neo-cli/bin/$CONFIG/net10.0/neo-cli.dll"
